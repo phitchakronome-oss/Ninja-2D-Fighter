@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SCREEN } from '../config/GameConfig';
+import { AnimationController } from '../systems/AnimationController';
 
 const GAME_ASSETS = {
   hero_kaito: 'assets/sprites/heroes/kaito.png',
@@ -7,6 +8,7 @@ const GAME_ASSETS = {
   enemy_scout: 'assets/sprites/enemies/shadow_scout.png',
   enemy_brute: 'assets/sprites/enemies/shadow_brute.png',
   enemy_boss: 'assets/sprites/enemies/kage_lord.png',
+  stage_moon_valley: 'assets/backgrounds/moonlit_valley.jpg',
 } as const;
 
 export class PreloadScene extends Phaser.Scene {
@@ -17,12 +19,56 @@ export class PreloadScene extends Phaser.Scene {
   preload(): void {
     this.createLoadingBar();
     Object.entries(GAME_ASSETS).forEach(([key, path]) => this.load.image(key, path));
+    this.load.spritesheet('char_kaito_sheet', 'assets/sprites/animations/naruto/base/naruto_combat_sheet.png', {
+      frameWidth: 256,
+      frameHeight: 256,
+    });
+    this.load.spritesheet('char_kaito_spirit_sheet', 'assets/sprites/animations/naruto/form2/kaito_spirit_combat_sheet.png', {
+      frameWidth: 256,
+      frameHeight: 256,
+    });
+    this.load.spritesheet('vfx_wind_orb_sheet', 'assets/effects/naruto/wind_orb_sheet.png', {
+      frameWidth: 256,
+      frameHeight: 256,
+    });
   }
 
   create(): void {
     Object.keys(GAME_ASSETS).forEach((key) => {
       this.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
     });
+    this.textures.get('char_kaito_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.textures.get('char_kaito_spirit_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.textures.get('vfx_wind_orb_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
+    AnimationController.registerAllFromData(this);
+    if (!this.anims.exists('kaito_spirit_run')) {
+      this.anims.create({
+        key: 'kaito_spirit_run',
+        frames: this.anims.generateFrameNumbers('char_kaito_spirit_sheet', { start: 0, end: 11 }),
+        frameRate: 16,
+        repeat: -1,
+      });
+      this.anims.create({
+        key: 'kaito_spirit_attack1',
+        frames: this.anims.generateFrameNumbers('char_kaito_spirit_sheet', { start: 12, end: 19 }),
+        frameRate: 24,
+        repeat: 0,
+      });
+    }
+    if (!this.anims.exists('wind_orb_spin')) {
+      this.anims.create({
+        key: 'wind_orb_spin',
+        frames: this.anims.generateFrameNumbers('vfx_wind_orb_sheet', { start: 0, end: 14 }),
+        frameRate: 32,
+        repeat: -1,
+      });
+      this.anims.create({
+        key: 'wind_orb_impact',
+        frames: this.anims.generateFrameNumbers('vfx_wind_orb_sheet', { start: 15, end: 20 }),
+        frameRate: 28,
+        repeat: 0,
+      });
+    }
     this.scene.start('CharacterSelectScene');
   }
 

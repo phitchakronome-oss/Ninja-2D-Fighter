@@ -7,6 +7,7 @@ export interface EnemyHost {
   damagePlayer(amount: number, sourceX: number, knockback: number): void;
   onEnemyDefeated(enemy: Enemy): void;
   createHitBurst(x: number, y: number, color: number, big?: boolean): void;
+  createDamageNumber(x: number, y: number, amount: number, critical?: boolean): void;
 }
 
 interface EnemyStat {
@@ -159,6 +160,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       if (!this.dead && this.phase === 1) this.clearTint();
     });
     this.host.createHitBurst(this.x, this.y - this.displayHeight * 0.48, this.kind === 'boss' ? 0xf0abfc : 0xffd166);
+    this.host.createDamageNumber(this.x, this.y - this.displayHeight * 0.72, amount, amount >= 45);
     if (this.hp <= 0) this.defeat();
     return true;
   }

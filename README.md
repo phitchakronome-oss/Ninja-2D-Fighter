@@ -58,7 +58,9 @@ public/assets/
 └── effects/        Particle texture
 ```
 
-ภาพตัวละครและศัตรูเวอร์ชันเต็มถูกเก็บใน `art_sources/generated/` ส่วนไฟล์ที่ปรับขนาดและลดน้ำหนักสำหรับเกมอยู่ใน `public/assets/sprites/` ดู prompt ที่ใช้และ prompt สำหรับสร้าง sprite sheet ต่อได้ใน `docs/ASSET_GENERATION_PROMPTS.md`.
+ไฟล์ที่เกมเรียกใช้จริงถูกปรับขนาดและลดน้ำหนักไว้ใน `public/assets/` โดยมีฉาก Moonlit Valley, ชีตวิ่ง/ต่อยของ Kaito และชีตเอฟเฟกต์ Wind Orb พร้อมใช้งาน
+
+> โหมดทดสอบปัจจุบันเปิดจักระไม่จำกัด (`DEBUG.INFINITE_CHAKRA`) และ HUD จะแสดง `∞ TEST`
 
 ## ระบบ Animation
 
@@ -68,7 +70,7 @@ public/assets/
 1. **มี sprite sheet จริงแล้ว** — ถ้าเติมข้อมูล frame ใน `src/data/animations.ts` และโหลด
    spritesheet ของตัวละครนั้นใน `PreloadScene.ts` แล้ว ระบบจะสร้าง Phaser animation
    (`scene.anims.create`) และเล่นแบบ frame animation ปกติ
-2. **ยังไม่มี sprite sheet (สถานะปัจจุบันของทุกตัวละคร)** — ระบบจะ fallback เป็น "placeholder juice"
+2. **ยังไม่มี sprite sheet สำหรับบางตัวละคร/บางท่า** — ระบบจะ fallback เป็น "placeholder juice"
    ที่สร้างด้วย Tween ล้วน ๆ: idle หายใจเบา ๆ, run เอียงตัว+เด้ง, jump/fall บีบยืดตามฟิสิกส์,
    ลงพื้นมี squash, dash มีโกสต์เทรลสีฟ้าให้ความรู้สึกเร็ว, hurt กระพริบแดง+สั่น, dead จางหายพร้อมหมุนล้ม
 

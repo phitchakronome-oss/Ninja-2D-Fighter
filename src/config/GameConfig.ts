@@ -72,6 +72,7 @@ export const DASH_DOUBLE_TAP_WINDOW_MS = 260;
 export const DEBUG = {
   SHOW_HITBOXES: false, // ⚡ แก้ไขจุดนี้: เปลี่ยนจาก true เป็น false เพื่อนำเส้นกรอบรอบตัวนินจาออก!
   SHOW_FPS: true,
+  INFINITE_CHAKRA: true, // โหมดทดสอบ: ใช้สกิลได้ต่อเนื่องโดยจักระไม่ลด
 } as const;
 
 /**

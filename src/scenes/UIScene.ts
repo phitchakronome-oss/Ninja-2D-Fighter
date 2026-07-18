@@ -100,7 +100,7 @@ export class UIScene extends Phaser.Scene {
     this.chakraBar.width = 266 * Math.max(0, this.player.chakra / this.player.maxChakra);
     this.expBar.width = 266 * Math.max(0, this.player.exp / this.player.getExpToNextLevel());
     this.hpText.setText(`${Math.ceil(this.player.hp)} / ${this.player.maxHp}`);
-    this.chakraText.setText(`${Math.floor(this.player.chakra)} / ${this.player.maxChakra}`);
+    this.chakraText.setText(DEBUG.INFINITE_CHAKRA ? '∞  TEST' : `${Math.floor(this.player.chakra)} / ${this.player.maxChakra}`);
     this.levelText.setText(`LV ${this.player.level}  •  ${this.player.gold} G`);
   }
 

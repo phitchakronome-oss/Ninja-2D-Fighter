@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COMBAT, PHYSICS, DASH_DOUBLE_TAP_WINDOW_MS, COOLDOWN_MS, CHAKRA } from '../../config/GameConfig';
+import { COMBAT, PHYSICS, DASH_DOUBLE_TAP_WINDOW_MS, COOLDOWN_MS, CHAKRA, DEBUG } from '../../config/GameConfig';
 import type { CharacterDefinition, Direction, SkillSlot } from '../../core/types';
 import { StateMachine } from '../../core/StateMachine';
 import { InputManager } from '../../systems/InputManager';
@@ -61,7 +61,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     this.maxHp = definition.baseStats.maxHp;
     this.maxChakra = definition.baseStats.maxChakra;
     this.hp = this.maxHp;
-    this.chakra = 35;
+    this.chakra = DEBUG.INFINITE_CHAKRA ? this.maxChakra : 35;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDisplaySize(230, 154).setOrigin(0.5, 1).setDepth(15);
@@ -87,13 +87,16 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     this.invulnerableMs = Math.max(0, this.invulnerableMs - delta);
     this.actionLockMs = Math.max(0, this.actionLockMs - delta);
     this.transformMs = Math.max(0, this.transformMs - delta);
-    this.chakra = Math.min(this.maxChakra, this.chakra + CHAKRA.REGEN_PER_SEC * delta / 1000);
+    this.chakra = DEBUG.INFINITE_CHAKRA
+      ? this.maxChakra
+      : Math.min(this.maxChakra, this.chakra + CHAKRA.REGEN_PER_SEC * delta / 1000);
     (Object.keys(this.cooldowns) as SkillSlot[]).forEach((slot) => {
       this.cooldowns[slot] = Math.max(0, this.cooldowns[slot] - delta);
     });
 
     if (this.transformMs <= 0 && this.isTransformed) {
       this.isTransformed = false;
+      this.animController.setVariant('base');
       this.host.setPlayerAura(false, this.definition.auraColorHex);
       this.host.notifyPlayer('โหมดจักระสิ้นสุดลงแล้ว', '#93a4c4');
     }
@@ -204,8 +207,9 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       this.combo = this.combo >= 3 ? 1 : this.combo + 1;
       this.comboExpireAt = now + COMBAT.COMBO_RESET_TIME_MS;
       const state = `attack${this.combo}` as 'attack1' | 'attack2' | 'attack3';
-      this.actionLockMs = this.combo === 3 ? 410 : 300;
-      this.setVelocityX(0);
+      this.actionLockMs = this.combo === 3 ? 410 : this.combo === 1 ? 335 : 300;
+      const lunge = this.combo === 3 ? 185 : this.combo === 2 ? 135 : 95;
+      this.setVelocityX((this.facing === 'right' ? 1 : -1) * lunge);
       this.stateMachine.transition(state);
       this.host.notifyPlayer(this.combo === 3 ? 'FINISHER!' : `คอมโบ ${this.combo}`, this.combo === 3 ? '#ffbd69' : '#eaf8ff');
     }
@@ -214,8 +218,8 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
 
   private resolveAttackHit(): void {
     if (this.attackHitDone || !this.stateMachine.state?.startsWith('attack')) return;
-    const startLock = this.combo === 3 ? 410 : 300;
-    const hitAt = this.combo === 3 ? 220 : 125;
+    const startLock = this.combo === 3 ? 410 : this.combo === 1 ? 335 : 300;
+    const hitAt = this.combo === 3 ? 220 : this.combo === 1 ? 165 : 125;
     if (this.actionLockMs <= startLock - hitAt) {
       this.attackHitDone = true;
       const damage = (this.definition.baseStats.damage + this.combo * 6) * (this.isTransformed ? 1.35 : 1);
@@ -236,6 +240,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     if (this.cooldowns[slot] > 0) return;
     if (slot === 'transform') {
       this.isTransformed = !this.isTransformed;
+      this.animController.setVariant(this.isTransformed ? 'spirit' : 'base');
       this.transformMs = this.isTransformed ? 12000 : 0;
       this.cooldowns[slot] = COOLDOWN_MS.TRANSFORM;
       if (this.isTransformed) {
@@ -250,7 +255,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     const costs: Record<Exclude<SkillSlot, 'transform'>, number> = { skill1: 18, skill2: 28, skill3: 40, ultimate: 65 };
     const cost = costs[slot];
     if (this.chakra < cost) { this.host.notifyPlayer('จักระไม่พอ', '#ff8fab'); return; }
-    this.chakra -= cost;
+    if (!DEBUG.INFINITE_CHAKRA) this.chakra -= cost;
     const cooldowns: Record<Exclude<SkillSlot, 'transform'>, number> = { skill1: COOLDOWN_MS.SKILL_1, skill2: COOLDOWN_MS.SKILL_2, skill3: COOLDOWN_MS.SKILL_3, ultimate: COOLDOWN_MS.ULTIMATE };
     this.cooldowns[slot] = cooldowns[slot];
     this.actionLockMs = slot === 'ultimate' ? 640 : 360;

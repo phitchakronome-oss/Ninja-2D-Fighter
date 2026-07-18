@@ -32,6 +32,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   private state: StageState = 'playing';
   private restartKey!: Phaser.Input.Keyboard.Key;
   private playerAura?: Phaser.GameObjects.Graphics;
+  private nextRunDustAt = 0;
 
   constructor() {
     super('StageScene');
@@ -45,6 +46,9 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.enemies = [];
     this.boss = undefined;
     this.waveTransitionPending = false;
+    this.nextRunDustAt = 0;
+    this.registry.remove('endState');
+    this.registry.remove('battleMessage');
 
     this.cameras.main.setBackgroundColor('#07101f');
     this.physics.world.setBounds(0, 0, STAGE_WIDTH, SCREEN.HEIGHT);
@@ -72,6 +76,10 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     const frameDelta = Math.min(delta, 34);
     this.player.update(_time, frameDelta);
     this.playerAura?.setPosition(this.player.x, this.player.y - this.player.displayHeight * 0.48);
+    if (this.player.getCurrentState() === 'run' && this.time.now >= this.nextRunDustAt) {
+      this.createMovementDust(this.player.x, this.player.y - 2, this.player.getFacing());
+      this.nextRunDustAt = this.time.now + 95;
+    }
     this.enemies.forEach((enemy) => enemy.updateAI(this.player, frameDelta));
 
     if (!this.waveTransitionPending && this.enemies.length > 0 && this.enemies.every((enemy) => enemy.isDead())) {
@@ -180,6 +188,26 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.tweens.add({ targets: burst, alpha: 0, scale: big ? 2.2 : 1.6, duration: big ? 520 : 260, onComplete: () => burst.destroy() });
   }
 
+  createDamageNumber(x: number, y: number, amount: number, critical = false): void {
+    const label = this.add.text(x + Phaser.Math.Between(-10, 10), y, `${Math.round(amount)}`, {
+      fontFamily: 'Arial Black, sans-serif',
+      fontSize: critical ? '25px' : '18px',
+      color: critical ? '#fff1a8' : '#ffffff',
+      stroke: critical ? '#9a4d00' : '#07101f',
+      strokeThickness: critical ? 6 : 4,
+    }).setOrigin(0.5).setDepth(60);
+    this.tweens.add({
+      targets: label,
+      y: y - (critical ? 72 : 48),
+      x: label.x + Phaser.Math.Between(-16, 16),
+      scale: critical ? 1.18 : 1,
+      alpha: 0,
+      duration: critical ? 720 : 520,
+      ease: 'Cubic.easeOut',
+      onComplete: () => label.destroy(),
+    });
+  }
+
   notifyPlayer(message: string, color = '#eaf8ff'): void {
     this.registry.set('battleMessage', { message, color, at: this.time.now });
   }
@@ -232,15 +260,29 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   }
 
   private createWindOrbVfx(x: number, y: number, direction: 1 | -1): void {
-    const orb = this.add.graphics().setPosition(x, y).setDepth(36).setBlendMode(Phaser.BlendModes.ADD);
-    orb.fillStyle(0xb9fff7, 0.38).fillCircle(0, 0, 24);
-    orb.lineStyle(5, 0x64e6db, 0.95).strokeCircle(0, 0, 31);
-    orb.lineStyle(2, 0xe7fffc, 0.75).strokeCircle(0, 0, 40);
-    for (let i = 0; i < 6; i += 1) orb.lineBetween(-58 - i * 12, (i % 2) * 12 - 6, -26, 0);
-    orb.scaleX = direction;
+    const orb = this.add.sprite(x, y, 'vfx_wind_orb_sheet', 0)
+      .setDisplaySize(118, 118)
+      .setDepth(36)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .play('wind_orb_spin');
+    const destinationX = x + direction * 360;
     this.tweens.add({
-      targets: orb, x: x + direction * 360, angle: direction * 220, scaleX: direction * 1.35, scaleY: 1.35,
-      alpha: 0, duration: 330, ease: 'Cubic.easeOut', onComplete: () => orb.destroy(),
+      targets: orb,
+      x: destinationX,
+      angle: direction * 180,
+      scaleX: orb.scaleX * 1.22,
+      scaleY: orb.scaleY * 1.22,
+      duration: 330,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        orb.destroy();
+        const impact = this.add.sprite(destinationX, y, 'vfx_wind_orb_sheet', 15)
+          .setDisplaySize(170, 170)
+          .setDepth(37)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .play('wind_orb_impact');
+        impact.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => impact.destroy());
+      },
     });
   }
 
@@ -293,19 +335,21 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   }
 
   private createBackdrop(): void {
-    const sky = this.add.rectangle(STAGE_WIDTH / 2, SCREEN.HEIGHT / 2, STAGE_WIDTH, SCREEN.HEIGHT, 0x091227).setDepth(-20);
-    sky.setScrollFactor(1);
-    const far = this.add.graphics().setDepth(-15).setScrollFactor(0.35);
-    far.fillStyle(0x17264a, 1);
-    for (let x = -200; x < STAGE_WIDTH + 400; x += 230) {
-      far.fillTriangle(x, 520, x + 130, 220 + (x % 80), x + 280, 520);
+    this.add.image(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 'stage_moon_valley')
+      .setDisplaySize(SCREEN.WIDTH, SCREEN.HEIGHT)
+      .setScrollFactor(0)
+      .setDepth(-30);
+    const near = this.add.graphics().setDepth(-10).setScrollFactor(0.72);
+    near.fillStyle(0x06101f, 0.72);
+    for (let x = -180; x < STAGE_WIDTH + 300; x += 260) {
+      near.fillTriangle(x, 625, x + 115, 430 + (x % 95), x + 290, 625);
     }
-    const near = this.add.graphics().setDepth(-10).setScrollFactor(0.6);
-    near.fillStyle(0x101d3a, 1);
-    for (let x = -100; x < STAGE_WIDTH + 300; x += 180) near.fillTriangle(x, 590, x + 90, 340 + (x % 120), x + 220, 590);
+    const mist = this.add.graphics().setDepth(-6).setScrollFactor(0.45);
+    mist.fillStyle(0x7fe7ef, 0.055);
+    for (let x = -100; x < STAGE_WIDTH + 400; x += 310) mist.fillEllipse(x, 520 + (x % 45), 420, 74);
     const stars = this.add.graphics().setDepth(-5).setScrollFactor(0.25);
-    stars.fillStyle(0x8be9fd, 0.7);
-    for (let i = 0; i < 80; i += 1) stars.fillCircle((i * 193) % STAGE_WIDTH, 50 + ((i * 67) % 330), (i % 3) + 1);
+    stars.fillStyle(0xbffaff, 0.42);
+    for (let i = 0; i < 42; i += 1) stars.fillCircle((i * 193) % STAGE_WIDTH, 45 + ((i * 67) % 260), (i % 2) + 1);
   }
 
   private createGround(): void {
@@ -333,5 +377,25 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       graphics.fillStyle(0x52e0c4, 0.65).fillCircle(x + 5, SCREEN.HEIGHT - GROUND_HEIGHT - 155, 8);
       graphics.lineStyle(2, 0x34547f, 0.5).strokeRect(x - 30, SCREEN.HEIGHT - GROUND_HEIGHT - 105, 70, 38);
     }
+  }
+
+  private createMovementDust(x: number, y: number, facing: Direction): void {
+    const direction = facing === 'right' ? -1 : 1;
+    const dust = this.add.graphics().setPosition(x + direction * 12, y).setDepth(11);
+    dust.fillStyle(0x8edee5, 0.18);
+    dust.fillCircle(-10, 0, 7);
+    dust.fillCircle(2, -3, 5);
+    dust.fillCircle(12, 1, 4);
+    this.tweens.add({
+      targets: dust,
+      x: dust.x + direction * 34,
+      y: y - 13,
+      scaleX: 1.6,
+      scaleY: 0.72,
+      alpha: 0,
+      duration: 260,
+      ease: 'Quad.easeOut',
+      onComplete: () => dust.destroy(),
+    });
   }
 }

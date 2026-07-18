@@ -33,8 +33,12 @@ export class AnimationController {
   private readonly characterId: CharacterId;
 
   private currentState: AnimState | null = null;
+  private variant: 'base' | 'spirit' = 'base';
   private readonly baseScaleX: number;
   private readonly baseScaleY: number;
+  private readonly baseDisplayHeight: number;
+  private readonly defaultTextureKey: string;
+  private readonly defaultFrame: string | number;
   private ghostTimer?: Phaser.Time.TimerEvent;
 
   constructor(scene: Phaser.Scene, sprite: Phaser.Physics.Arcade.Sprite, characterId: CharacterId) {
@@ -43,6 +47,9 @@ export class AnimationController {
     this.characterId = characterId;
     this.baseScaleX = sprite.scaleX;
     this.baseScaleY = sprite.scaleY;
+    this.baseDisplayHeight = sprite.displayHeight;
+    this.defaultTextureKey = sprite.texture.key;
+    this.defaultFrame = sprite.frame.name;
   }
 
   /**
@@ -73,15 +80,29 @@ export class AnimationController {
     });
   }
 
+  setVariant(variant: 'base' | 'spirit'): void {
+    if (this.variant === variant) return;
+    this.variant = variant;
+    const state = this.currentState ?? 'idle';
+    this.currentState = null;
+    this.play(state, { facing: this.sprite.flipX ? 'left' : 'right', force: true });
+  }
+
   /** เล่นท่าทางตาม state — ใช้ sprite sheet จริงถ้ามี ไม่งั้น fallback เป็น tween */
   play(state: AnimState, opts: PlayOptions = {}): void {
     if (this.currentState === state && !opts.force) return;
     this.currentState = state;
 
-    const realKey = `${this.characterId}_${state}`;
+    const realKey = this.getAnimationKey(state);
     if (this.scene.anims.exists(realKey)) {
       this.stopGhostTrail();
+      this.scene.tweens.killTweensOf(this.sprite);
+      this.sprite.setAngle(0).setAlpha(1);
+      // Runtime sheets are normalized so row 250 is the visual foot line.
+      // Using that exact pivot prevents transparent padding from lifting the hero.
+      this.sprite.setOrigin(0.5, 250 / 256);
       this.sprite.play(realKey, true);
+      this.fitCurrentFrameToBaseHeight();
       return;
     }
 
@@ -90,6 +111,15 @@ export class AnimationController {
 
   private playFallback(state: AnimState, opts: PlayOptions): void {
     const tweens = this.scene.tweens;
+    const spiritTexture = this.characterId === 'kaito' && this.variant === 'spirit' && this.scene.textures.exists('char_kaito_spirit_sheet');
+    const targetTexture = spiritTexture ? 'char_kaito_spirit_sheet' : this.defaultTextureKey;
+    const targetFrame = spiritTexture ? 19 : this.defaultFrame;
+    if (this.sprite.texture.key !== targetTexture || this.sprite.frame.name !== targetFrame) {
+      this.sprite.stop();
+      this.sprite.setTexture(targetTexture, targetFrame);
+      this.sprite.setOrigin(0.5, spiritTexture ? 250 / 256 : 1);
+      this.fitCurrentFrameToBaseHeight();
+    }
     const isDashing = state === 'dash';
     if (!isDashing) this.stopGhostTrail();
 
@@ -207,7 +237,7 @@ export class AnimationController {
 
   /** เรียกตอนตัวละครลงพื้นพอดี (jump/fall -> idle/run) เพื่อเพิ่มฟีลลิ่งกระแทกพื้น */
   playLandingSquash(): void {
-    if (this.scene.anims.exists(`${this.characterId}_${this.currentState}`)) return; // มี sprite sheet จริงแล้ว ไม่ต้องใช้ fallback squash
+    if (this.currentState && this.scene.anims.exists(this.getAnimationKey(this.currentState))) return; // มี sprite sheet จริงแล้ว ไม่ต้องใช้ fallback squash
 
     this.scene.tweens.killTweensOf(this.sprite);
     this.sprite.setScale(
@@ -257,5 +287,27 @@ export class AnimationController {
   private stopGhostTrail(): void {
     this.ghostTimer?.remove();
     this.ghostTimer = undefined;
+  }
+
+  private fitCurrentFrameToBaseHeight(): void {
+    const frameWidth = this.sprite.frame.realWidth || this.sprite.width;
+    const frameHeight = this.sprite.frame.realHeight || this.sprite.height;
+    this.sprite.setDisplaySize(this.baseDisplayHeight * frameWidth / frameHeight, this.baseDisplayHeight);
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      // Body dimensions are texture-relative in Arcade Physics. Re-syncing here
+      // keeps the collision feet fixed when switching 768x512 art to 256x256 frames.
+      const bodyWidth = 34 / Math.max(0.001, Math.abs(this.sprite.scaleX));
+      const bodyHeight = 96 / Math.max(0.001, Math.abs(this.sprite.scaleY));
+      body.setSize(bodyWidth, bodyHeight);
+      body.setOffset(
+        frameWidth * 0.5 - bodyWidth * 0.5,
+        frameHeight * this.sprite.originY - bodyHeight,
+      );
+    }
+  }
+
+  private getAnimationKey(state: AnimState): string {
+    return `${this.characterId}_${this.variant === 'spirit' ? 'spirit_' : ''}${state}`;
   }
 }
