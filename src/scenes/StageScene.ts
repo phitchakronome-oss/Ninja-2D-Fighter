@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SCREEN } from '../config/GameConfig';
+import { COMBAT, SCREEN } from '../config/GameConfig';
 import { getCharacterDefinition } from '../data/characters';
 import type { Direction, SkillSlot } from '../core/types';
 import { Character, type PlayerHost } from '../entities/characters/Character';
@@ -18,12 +18,14 @@ export interface StageStatus {
   remaining: number;
   boss: Enemy | undefined;
   message?: { message: string; color: string; at: number };
+  paused: boolean;
 }
 
 export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   private player!: Character;
   private inputManager!: InputManager;
   private groundGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private enemyGroup!: Phaser.Physics.Arcade.Group;
   private enemies: Enemy[] = [];
   private wave = 0;
   private readonly waveTotal = 3;
@@ -31,7 +33,10 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   private boss?: Enemy;
   private state: StageState = 'playing';
   private restartKey!: Phaser.Input.Keyboard.Key;
+  private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
+  private paused = false;
   private playerAura?: Phaser.GameObjects.Graphics;
+  private playerChargeAura?: Phaser.GameObjects.Container;
   private nextRunDustAt = 0;
 
   constructor() {
@@ -47,6 +52,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.boss = undefined;
     this.waveTransitionPending = false;
     this.nextRunDustAt = 0;
+    this.paused = false;
     this.registry.remove('endState');
     this.registry.remove('battleMessage');
 
@@ -55,9 +61,13 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.createBackdrop();
     this.createGround();
     this.createArenaDetails();
+    this.enemyGroup = this.physics.add.group({ collideWorldBounds: true });
+    this.physics.add.collider(this.enemyGroup, this.groundGroup);
+    this.physics.add.collider(this.enemyGroup, this.enemyGroup);
 
     this.inputManager = new InputManager(this);
     this.restartKey = this.input.keyboard!.addKey('R');
+    this.pauseKeys = [this.input.keyboard!.addKey('P'), this.input.keyboard!.addKey('ESC')];
     this.player = new Character(this, 240, SCREEN.HEIGHT - GROUND_HEIGHT, definition, this.inputManager, this);
     this.physics.add.collider(this.player, this.groundGroup);
     this.cameras.main.setBounds(0, 0, STAGE_WIDTH, SCREEN.HEIGHT);
@@ -67,6 +77,11 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   }
 
   update(_time: number, delta: number): void {
+    if (this.pauseKeys.some((key) => Phaser.Input.Keyboard.JustDown(key))) {
+      this.togglePause();
+      return;
+    }
+    if (this.paused) return;
     if (Phaser.Input.Keyboard.JustDown(this.restartKey) && this.state !== 'playing') {
       this.scene.stop('UIScene');
       this.scene.restart();
@@ -84,6 +99,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       (this.player.body as Phaser.Physics.Arcade.Body).updateFromGameObject();
     }
     this.playerAura?.setPosition(this.player.x, this.player.y - this.player.displayHeight * 0.48);
+    this.playerChargeAura?.setPosition(this.player.x, this.player.y - this.player.displayHeight * 0.46);
     if (this.player.getCurrentState() === 'run' && this.time.now >= this.nextRunDustAt) {
       this.createMovementDust(this.player.x, this.player.y - 2, this.player.getFacing());
       this.nextRunDustAt = this.time.now + 95;
@@ -116,22 +132,43 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       remaining: this.enemies.filter((enemy) => !enemy.isDead()).length,
       boss: this.boss,
       message: this.registry.get('battleMessage') as StageStatus['message'],
+      paused: this.paused,
     };
   }
 
   getPlayer(): Character { return this.player; }
 
-  checkPlayerAttack(x: number, facing: Direction, damage: number, knockback: number, range: number): void {
+  isPaused(): boolean { return this.paused; }
+
+  togglePause(): void {
+    if (this.state !== 'playing') return;
+    this.paused = !this.paused;
+    if (this.paused) {
+      this.physics.world.pause();
+      this.tweens.pauseAll();
+      this.anims.pauseAll();
+    } else {
+      this.physics.world.resume();
+      this.tweens.resumeAll();
+      this.anims.resumeAll();
+    }
+  }
+
+  checkPlayerAttack(x: number, facing: Direction, damage: number, knockback: number, range: number, combo: number): void {
     if (this.state !== 'playing') return;
     const direction = facing === 'right' ? 1 : -1;
+    const critical = Math.random() < COMBAT.CRITICAL_CHANCE_BASE + (combo === 3 ? 0.12 : 0);
+    const finalDamage = damage * (critical ? COMBAT.CRITICAL_MULTIPLIER : 1);
+    this.createMeleeArc(x + direction * (combo === 3 ? 105 : 78), this.player.y - 62, direction, combo);
     const targets = this.enemies.filter((enemy) => !enemy.isDead()
       && Math.abs(enemy.y - this.player.y) < 90
       && enemy.x * direction > x * direction
       && Math.abs(enemy.x - x) <= range);
     targets.forEach((enemy) => {
-      if (enemy.takeDamage(damage, knockback, direction)) {
+      if (enemy.takeDamage(finalDamage, knockback, direction, critical)) {
         this.player.chakra = Math.min(this.player.maxChakra, this.player.chakra + 4);
-        this.cameras.main.shake(70, 0.0025);
+        this.cameras.main.shake(critical ? 115 : 70, critical ? 0.005 : 0.0025);
+        if (critical) this.notifyPlayer('CRITICAL HIT!', '#fff1a8');
       }
     });
   }
@@ -238,6 +275,32 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.tweens.add({ targets: aura, scaleX: 1.12, scaleY: 1.06, alpha: 0.62, duration: 430, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
   }
 
+  setPlayerCharging(active: boolean, color: number): void {
+    if (!active) {
+      if (this.playerChargeAura) {
+        this.playerChargeAura.list.forEach((child) => this.tweens.killTweensOf(child));
+        this.tweens.killTweensOf(this.playerChargeAura);
+        this.playerChargeAura.destroy(true);
+        this.playerChargeAura = undefined;
+      }
+      return;
+    }
+    this.setPlayerCharging(false, color);
+    const glow = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+    glow.fillStyle(color, 0.14).fillEllipse(0, 0, 124, 174);
+    glow.lineStyle(4, color, 0.78).strokeEllipse(0, 0, 132, 184);
+    glow.lineStyle(2, 0xffffff, 0.5).strokeEllipse(0, 0, 94, 152);
+    const ground = this.add.graphics().setPosition(0, 82).setBlendMode(Phaser.BlendModes.ADD);
+    ground.lineStyle(4, color, 0.8).strokeEllipse(0, 0, 130, 24);
+    for (let index = 0; index < 8; index += 1) {
+      const angle = index * Math.PI / 4;
+      ground.lineBetween(Math.cos(angle) * 32, Math.sin(angle) * 6, Math.cos(angle) * 82, Math.sin(angle) * 15);
+    }
+    this.playerChargeAura = this.add.container(this.player.x, this.player.y - 70, [glow, ground]).setDepth(14);
+    this.tweens.add({ targets: glow, scaleX: 1.13, scaleY: 1.08, alpha: 0.58, duration: 170, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: ground, angle: 360, scale: 1.16, duration: 900, repeat: -1, ease: 'Linear' });
+  }
+
   private spawnWave(wave: number): void {
     this.wave = wave;
     const layout: EnemyKind[] = wave === 1 ? ['scout', 'scout', 'brute'] : wave === 2 ? ['scout', 'scout', 'brute', 'brute'] : ['scout', 'brute', 'brute', 'scout', 'brute'];
@@ -246,7 +309,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       const x = 720 + index * 310 + wave * 90;
       const enemy = new Enemy(this, x, SCREEN.HEIGHT - GROUND_HEIGHT, kind, this);
       this.enemies.push(enemy);
-      this.physics.add.collider(enemy, this.groundGroup);
+      this.enemyGroup.add(enemy);
       this.createPortal(x, SCREEN.HEIGHT - GROUND_HEIGHT - 30, kind === 'brute' ? 0xff6f91 : 0x64e6db);
     });
   }
@@ -258,7 +321,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     const boss = new Enemy(this, 2520, SCREEN.HEIGHT - GROUND_HEIGHT, 'boss', this);
     this.boss = boss;
     this.enemies.push(boss);
-    this.physics.add.collider(boss, this.groundGroup);
+    this.enemyGroup.add(boss);
     this.createPortal(boss.x, boss.y - 45, 0xd8b4fe, true);
   }
 
@@ -404,6 +467,29 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       duration: 260,
       ease: 'Quad.easeOut',
       onComplete: () => dust.destroy(),
+    });
+  }
+
+  private createMeleeArc(x: number, y: number, direction: 1 | -1, combo: number): void {
+    const color = combo === 3 ? 0xffd166 : combo === 2 ? 0x9c8cff : 0x8ff7ff;
+    const arc = this.add.graphics().setPosition(x, y).setDepth(38).setBlendMode(Phaser.BlendModes.ADD);
+    arc.lineStyle(combo === 3 ? 10 : 6, color, 0.92);
+    arc.beginPath();
+    arc.arc(0, 0, combo === 3 ? 74 : 54, direction > 0 ? -0.9 : Math.PI - 0.9, direction > 0 ? 0.9 : Math.PI + 0.9);
+    arc.strokePath();
+    arc.lineStyle(2, 0xffffff, 0.75);
+    arc.beginPath();
+    arc.arc(0, 0, combo === 3 ? 88 : 64, direction > 0 ? -0.75 : Math.PI - 0.75, direction > 0 ? 0.75 : Math.PI + 0.75);
+    arc.strokePath();
+    arc.setScale(0.6).setAlpha(0.95);
+    this.tweens.add({
+      targets: arc,
+      scale: combo === 3 ? 1.55 : 1.25,
+      alpha: 0,
+      x: x + direction * 38,
+      duration: combo === 3 ? 230 : 160,
+      ease: 'Cubic.easeOut',
+      onComplete: () => arc.destroy(),
     });
   }
 }

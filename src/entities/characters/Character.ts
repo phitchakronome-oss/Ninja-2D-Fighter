@@ -6,12 +6,13 @@ import { InputManager } from '../../systems/InputManager';
 import { AnimationController } from '../../systems/AnimationController';
 
 export interface PlayerHost {
-  checkPlayerAttack(x: number, facing: Direction, damage: number, knockback: number, range: number): void;
+  checkPlayerAttack(x: number, facing: Direction, damage: number, knockback: number, range: number, combo: number): void;
   handlePlayerSkill(slot: SkillSlot, x: number, y: number, facing: Direction): void;
   onPlayerDefeated(): void;
   createHitBurst(x: number, y: number, color: number, big?: boolean): void;
   notifyPlayer(message: string, color?: string): void;
   setPlayerAura(active: boolean, color: number): void;
+  setPlayerCharging(active: boolean, color: number): void;
 }
 
 export class Character extends Phaser.Physics.Arcade.Sprite {
@@ -34,6 +35,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
 
   private readonly host: PlayerHost;
   private readonly gameSettings: GameSettings;
+  private readonly groundY: number;
   private jumpsUsed = 0;
   private readonly maxJumps = 2;
   private isDashing = false;
@@ -50,6 +52,8 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   private coyoteMs = 0;
   private jumpBufferMs = 0;
   private wasOnGround = false;
+  private charging = false;
+  private nextChargePulseAt = 0;
   private readonly cooldowns: Record<SkillSlot, number> = {
     skill1: 0, skill2: 0, skill3: 0, ultimate: 0, transform: 0,
   };
@@ -59,6 +63,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     this.definition = definition;
     this.host = host;
     this.inputManager = inputManager;
+    this.groundY = groundY;
     this.maxHp = definition.baseStats.maxHp;
     this.maxChakra = definition.baseStats.maxChakra;
     this.gameSettings = { ...DEFAULT_GAME_SETTINGS, ...(scene.registry.get('gameSettings') as Partial<GameSettings> | undefined) };
@@ -80,8 +85,18 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   update(_time: number, delta: number): void {
     if (this.hp <= 0) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
-    const onGround = body.blocked.down || body.touching.down;
-    if (onGround && !this.wasOnGround && body.velocity.y >= 0) this.animController.playLandingSquash();
+    let onGround = body.blocked.down || body.touching.down || (this.y >= this.groundY - 1.5 && body.velocity.y >= 0);
+    if (this.y > this.groundY || (onGround && this.y > this.groundY - 1)) {
+      this.setY(this.groundY);
+      if (body.velocity.y > 0) this.setVelocityY(0);
+      body.updateFromGameObject();
+      onGround = true;
+    }
+    if (onGround && !this.wasOnGround && body.velocity.y >= 0) {
+      this.animController.playLandingSquash();
+      this.host.createHitBurst(this.x, this.y - 2, 0x82dff3);
+      this.stateMachine.transition(Math.abs(body.velocity.x) > 20 ? 'run' : 'idle');
+    }
     this.coyoteMs = onGround ? 110 : Math.max(0, this.coyoteMs - delta);
     this.jumpBufferMs = Math.max(0, this.jumpBufferMs - delta);
     if (this.inputManager.justDown('JUMP')) this.jumpBufferMs = 130;
@@ -104,10 +119,19 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (onGround) this.jumpsUsed = 0;
-    if (this.isDashing) {
+    const wantsCharge = this.inputManager.isDown('CHARGE') && onGround && this.actionLockMs <= 0 && !this.isDashing;
+    if (wantsCharge) {
+      this.updateCharging(delta);
+    } else if (this.charging) {
+      this.stopCharging();
+    }
+
+    if (this.charging) {
+      this.setVelocityX(0);
+    } else if (this.isDashing) {
       this.updateDash(delta);
     } else if (this.actionLockMs <= 0) {
-      this.handleHorizontalMovement();
+      this.handleHorizontalMovement(delta);
       this.handleJumpInput(onGround);
       this.handleDashInput(delta);
       this.handleAttackInput();
@@ -132,6 +156,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   hasInfiniteChakra(): boolean { return this.gameSettings.infiniteChakra; }
   isInvincible(): boolean { return this.gameSettings.invincible; }
   hasZeroCooldown(): boolean { return this.gameSettings.zeroCooldown; }
+  isChargingChakra(): boolean { return this.charging; }
   getExpToNextLevel(): number { return Math.floor(100 * Math.pow(1.18, this.level - 1)); }
 
   takeDamage(rawAmount: number, sourceX: number, knockback: number): void {
@@ -140,6 +165,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       this.hp = this.maxHp;
       return;
     }
+    this.stopCharging();
     const defense = this.definition.baseStats.defense + (this.isTransformed ? 7 : 0);
     const amount = Math.max(1, Math.round(rawAmount - defense * 0.55));
     this.hp = Math.max(0, this.hp - amount);
@@ -174,6 +200,8 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       .addState('jump', { onEnter: () => play('jump') })
       .addState('fall', { onEnter: () => play('fall') })
       .addState('dash', { onEnter: () => { this.isDashing = true; this.dashTimeRemainingMs = PHYSICS.DASH_DURATION_MS; play('dash'); } })
+      .addState('charge', { onEnter: () => play('charge') })
+      .addState('skill', { onEnter: () => play('skill') })
       .addState('attack1', { onEnter: () => { this.attackHitDone = false; play('attack1'); } })
       .addState('attack2', { onEnter: () => { this.attackHitDone = false; play('attack2'); } })
       .addState('attack3', { onEnter: () => { this.attackHitDone = false; play('attack3'); } })
@@ -181,13 +209,15 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       .addState('dead', { onEnter: () => { this.actionLockMs = 99999; play('dead'); } });
   }
 
-  private handleHorizontalMovement(): void {
+  private handleHorizontalMovement(delta: number): void {
     const left = this.inputManager.isDown('LEFT');
     const right = this.inputManager.isDown('RIGHT');
     const speed = (this.isTransformed ? 1.16 : 1) * PHYSICS.WALK_SPEED * this.definition.baseStats.speedMultiplier;
-    if (left && !right) { this.setVelocityX(-speed); this.facing = 'left'; this.setFlipX(true); }
-    else if (right && !left) { this.setVelocityX(speed); this.facing = 'right'; this.setFlipX(false); }
-    else this.setVelocityX((this.body as Phaser.Physics.Arcade.Body).velocity.x * 0.82);
+    const current = (this.body as Phaser.Physics.Arcade.Body).velocity.x;
+    const blend = Math.min(1, delta * 0.025);
+    if (left && !right) { this.setVelocityX(Phaser.Math.Linear(current, -speed, blend)); this.facing = 'left'; this.setFlipX(true); }
+    else if (right && !left) { this.setVelocityX(Phaser.Math.Linear(current, speed, blend)); this.facing = 'right'; this.setFlipX(false); }
+    else this.setVelocityX(Phaser.Math.Linear(current, 0, Math.min(1, delta * 0.04)));
   }
 
   private handleJumpInput(onGround: boolean): void {
@@ -236,7 +266,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     if (this.actionLockMs <= startLock - hitAt) {
       this.attackHitDone = true;
       const damage = (this.definition.baseStats.damage + this.combo * 6) * (this.isTransformed ? 1.35 : 1);
-      this.host.checkPlayerAttack(this.x, this.facing, damage, this.combo === 3 ? 420 : 240, this.combo === 3 ? 180 : 135);
+      this.host.checkPlayerAttack(this.x, this.facing, damage, this.combo === 3 ? 420 : 240, this.combo === 3 ? 180 : 135, this.combo);
       this.chakra = Math.min(this.maxChakra, this.chakra + CHAKRA.GAIN_PER_HIT);
     }
   }
@@ -272,7 +302,13 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     const cooldowns: Record<Exclude<SkillSlot, 'transform'>, number> = { skill1: COOLDOWN_MS.SKILL_1, skill2: COOLDOWN_MS.SKILL_2, skill3: COOLDOWN_MS.SKILL_3, ultimate: COOLDOWN_MS.ULTIMATE };
     this.cooldowns[slot] = this.gameSettings.zeroCooldown ? 0 : cooldowns[slot];
     this.actionLockMs = slot === 'ultimate' ? 640 : 360;
+    if (this.y >= this.groundY - 4) {
+      this.setY(this.groundY);
+      this.setVelocityY(0);
+      (this.body as Phaser.Physics.Arcade.Body).updateFromGameObject();
+    }
     this.setVelocityX(0);
+    this.stateMachine.transition('skill');
     this.host.handlePlayerSkill(slot, this.x, this.y - 55, this.facing);
   }
 
@@ -293,10 +329,33 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   }
 
   private updateMotionState(onGround: boolean): void {
-    if (this.isDashing || this.actionLockMs > 0 || this.hp <= 0) return;
+    if (this.charging || this.isDashing || this.actionLockMs > 0 || this.hp <= 0) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!onGround) this.stateMachine.transition(body.velocity.y < 0 ? 'jump' : 'fall');
     else if (Math.abs(body.velocity.x) > 20) this.stateMachine.transition('run');
     else this.stateMachine.transition('idle');
+  }
+
+  private updateCharging(delta: number): void {
+    if (!this.charging) {
+      this.charging = true;
+      this.stateMachine.transition('charge');
+      this.host.setPlayerCharging(true, this.isTransformed ? this.definition.auraColorHex : 0x64e6db);
+      this.host.notifyPlayer('CHAKRA CHARGE', '#64e6db');
+    }
+    if (!this.gameSettings.infiniteChakra) {
+      this.chakra = Math.min(this.maxChakra, this.chakra + CHAKRA.CHARGE_PER_SEC * delta / 1000);
+    }
+    if (this.scene.time.now >= this.nextChargePulseAt) {
+      this.host.createHitBurst(this.x, this.y - 45, this.isTransformed ? this.definition.auraColorHex : 0x64e6db);
+      this.nextChargePulseAt = this.scene.time.now + 330;
+    }
+  }
+
+  private stopCharging(): void {
+    if (!this.charging) return;
+    this.charging = false;
+    this.host.setPlayerCharging(false, 0x64e6db);
+    if (this.hp > 0) this.stateMachine.transition('idle');
   }
 }

@@ -195,6 +195,26 @@ export class AnimationController {
         this.startGhostTrail(opts.facing ?? 'right');
         break;
 
+      case 'charge':
+        tweens.killTweensOf(this.sprite);
+        this.sprite.setAngle(0).setScale(this.baseScaleX, this.baseScaleY);
+        tweens.add({
+          targets: this.sprite,
+          scaleX: this.baseScaleX * 1.035,
+          scaleY: this.baseScaleY * 0.975,
+          duration: 180,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+        break;
+
+      case 'skill':
+        tweens.killTweensOf(this.sprite);
+        this.sprite.setAngle(0).setScale(this.baseScaleX, this.baseScaleY);
+        tweens.add({ targets: this.sprite, scaleX: this.baseScaleX * 1.08, scaleY: this.baseScaleY * 0.94, duration: 120, yoyo: true });
+        break;
+
       case 'attack1':
       case 'attack2':
       case 'attack3': {

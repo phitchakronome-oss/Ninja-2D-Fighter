@@ -13,7 +13,7 @@ export const PHYSICS = {
   WALK_SPEED: 220,
   RUN_SPEED: 380,
   DASH_SPEED: 700,
-  DASH_DURATION_MS: 180,
+  DASH_DURATION_MS: 220,
   JUMP_VELOCITY: -620,
   DOUBLE_JUMP_VELOCITY: -560,
 } as const;
@@ -32,6 +32,7 @@ export const CHAKRA = {
   REGEN_PER_SEC: 2.5,
   GAIN_PER_HIT: 4,
   GAIN_PER_KILL: 10,
+  CHARGE_PER_SEC: 28,
 } as const;
 
 export const COOLDOWN_MS = {
@@ -59,6 +60,7 @@ export const INPUT_KEYS = {
   JUMP: ['UP', 'W'], // เดิน+กระโดดใช้ WASD ทั้งหมด (ลูกศรใช้ได้เหมือนกันเป็นทางเลือกสำรอง)
   DOWN: ['DOWN', 'S'],
   ATTACK: 'J',
+  CHARGE: 'C',
   SKILL_1: 'U',
   SKILL_2: 'I',
   SKILL_3: 'O',
@@ -109,8 +111,8 @@ export const ANIMATION = {
   LAND_SQUASH_SCALE_X: 1.2,
   LAND_SQUASH_SCALE_Y: 0.78,
   LAND_RECOVER_MS: 160,
-  DASH_GHOST_COUNT: 4,
-  DASH_GHOST_SPAWN_INTERVAL_MS: 32,
+  DASH_GHOST_COUNT: 7,
+  DASH_GHOST_SPAWN_INTERVAL_MS: 24,
   DASH_GHOST_FADE_MS: 220,
   HURT_FLASH_MS: 100,
   HURT_SHAKE_PX: 5,

@@ -23,6 +23,8 @@ export type AnimState =
   | 'jump'
   | 'fall'
   | 'dash'
+  | 'charge'
+  | 'skill'
   | 'attack1'
   | 'attack2'
   | 'attack3'

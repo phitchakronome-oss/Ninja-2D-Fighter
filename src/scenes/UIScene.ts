@@ -18,6 +18,8 @@ export class UIScene extends Phaser.Scene {
   private fpsText?: Phaser.GameObjects.Text;
   private nextFpsRefresh = 0;
   private endPanel?: Phaser.GameObjects.Container;
+  private pauseOverlay!: Phaser.GameObjects.Container;
+  private pauseButtonText!: Phaser.GameObjects.Text;
   private skills = new Map<SkillSlot, { box: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; key: string }>();
 
   constructor() {
@@ -35,6 +37,8 @@ export class UIScene extends Phaser.Scene {
     this.updateBars();
     this.updateSkills();
     const status = this.stage.getStatus();
+    this.pauseOverlay.setVisible(status.paused);
+    this.pauseButtonText.setText(status.paused ? '▶ เล่นต่อ' : 'Ⅱ หยุด');
     this.objectiveText.setText(status.boss && !status.boss.isDead() ? 'เป้าหมาย: โค่น KAGE LORD' : `เป้าหมาย: เคลียร์เงาศัตรู  |  เหลือ ${status.remaining}`);
     const message = status.message;
     if (message && this.time.now - message.at < 2200) {
@@ -66,7 +70,7 @@ export class UIScene extends Phaser.Scene {
 
     this.objectiveText = this.add.text(SCREEN.WIDTH / 2, 22, '', { fontFamily: 'monospace', fontSize: '14px', color: '#d8e7ff', backgroundColor: '#07101fbb', padding: { left: 14, right: 14, top: 7, bottom: 7 } }).setOrigin(0.5, 0);
     if (DEBUG.SHOW_FPS) {
-      this.fpsText = this.add.text(SCREEN.WIDTH - 18, 18, '-- FPS', { fontFamily: 'monospace', fontSize: '12px', color: '#64e6db', backgroundColor: '#07101fbb', padding: { left: 7, right: 7, top: 5, bottom: 5 } }).setOrigin(1, 0);
+      this.fpsText = this.add.text(SCREEN.WIDTH - 126, 18, '-- FPS', { fontFamily: 'monospace', fontSize: '12px', color: '#64e6db', backgroundColor: '#07101fbb', padding: { left: 7, right: 7, top: 5, bottom: 5 } }).setOrigin(1, 0);
     }
     this.messageText = this.add.text(SCREEN.WIDTH / 2, 138, '', { fontFamily: 'Arial Black, sans-serif', fontSize: '24px', stroke: '#07101f', strokeThickness: 6 }).setOrigin(0.5).setDepth(20);
 
@@ -82,7 +86,16 @@ export class UIScene extends Phaser.Scene {
       }).setOrigin(0, 1);
     }
 
-    const hint = this.add.text(18, SCREEN.HEIGHT - 31, 'A/D เดิน • W กระโดด • J โจมตี • U/I/O สกิล • K อัลติ • L โหมดจักระ • R เริ่มใหม่', { fontFamily: 'monospace', fontSize: '12px', color: '#93a4c4', backgroundColor: '#07101fcc', padding: { left: 8, right: 8, top: 6, bottom: 6 } });
+    const pauseButton = this.add.rectangle(SCREEN.WIDTH - 64, 29, 104, 34, 0x111c35, 0.96)
+      .setStrokeStyle(2, 0x64e6db, 0.72).setInteractive({ useHandCursor: true }).setDepth(102);
+    this.pauseButtonText = this.add.text(pauseButton.x, pauseButton.y, 'Ⅱ หยุด', {
+      fontFamily: 'Arial Black, sans-serif', fontSize: '13px', color: '#eaf8ff',
+    }).setOrigin(0.5).setDepth(103);
+    pauseButton.on('pointerover', () => pauseButton.setFillStyle(0x1b3153));
+    pauseButton.on('pointerout', () => pauseButton.setFillStyle(0x111c35));
+    pauseButton.on('pointerdown', () => this.stage.togglePause());
+
+    const hint = this.add.text(18, SCREEN.HEIGHT - 31, 'A/D เดิน • W กระโดด • J โจมตี • C ชาร์จจักระ • U/I/O สกิล • K อัลติ • L ร่าง 2 • P/ESC หยุด', { fontFamily: 'monospace', fontSize: '12px', color: '#93a4c4', backgroundColor: '#07101fcc', padding: { left: 8, right: 8, top: 6, bottom: 6 } });
     hint.setScrollFactor(0);
 
     const skillData: { slot: SkillSlot; key: string; color: number }[] = [
@@ -98,7 +111,30 @@ export class UIScene extends Phaser.Scene {
       const label = this.add.text(x, SCREEN.HEIGHT - 70, item.key, { fontFamily: 'Arial Black, sans-serif', fontSize: '18px', color: '#ffffff' }).setOrigin(0.5);
       this.skills.set(item.slot, { box, label, key: item.key });
     });
+    this.createPauseOverlay();
     void panel;
+  }
+
+  private createPauseOverlay(): void {
+    const veil = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, SCREEN.WIDTH, SCREEN.HEIGHT, 0x02050d, 0.72)
+      .setInteractive();
+    const panel = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 470, 220, 0x0b1730, 0.98)
+      .setStrokeStyle(3, 0x64e6db, 0.9);
+    const title = this.add.text(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 - 48, 'หยุดชั่วคราว', {
+      fontFamily: 'Arial Black, sans-serif', fontSize: '34px', color: '#eaf8ff',
+    }).setOrigin(0.5);
+    const hint = this.add.text(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 + 8, 'กด P / ESC หรือปุ่มด้านล่างเพื่อกลับเข้าสนามรบ', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#9fb8dc',
+    }).setOrigin(0.5);
+    const resume = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 + 64, 190, 44, 0x183b50, 1)
+      .setStrokeStyle(2, 0x64e6db).setInteractive({ useHandCursor: true });
+    const resumeText = this.add.text(resume.x, resume.y, '▶ เล่นต่อ', {
+      fontFamily: 'Arial Black, sans-serif', fontSize: '17px', color: '#ffffff',
+    }).setOrigin(0.5);
+    resume.on('pointerover', () => resume.setFillStyle(0x245a6f));
+    resume.on('pointerout', () => resume.setFillStyle(0x183b50));
+    resume.on('pointerdown', () => this.stage.togglePause());
+    this.pauseOverlay = this.add.container(0, 0, [veil, panel, title, hint, resume, resumeText]).setDepth(100).setVisible(false);
   }
 
   private createBar(x: number, y: number, width: number, height: number, color: number, assign: (bar: Phaser.GameObjects.Rectangle) => void): void {
@@ -112,7 +148,8 @@ export class UIScene extends Phaser.Scene {
     this.chakraBar.width = 266 * Math.max(0, this.player.chakra / this.player.maxChakra);
     this.expBar.width = 266 * Math.max(0, this.player.exp / this.player.getExpToNextLevel());
     this.hpText.setText(this.player.isInvincible() ? '∞  TEST' : `${Math.ceil(this.player.hp)} / ${this.player.maxHp}`);
-    this.chakraText.setText(this.player.hasInfiniteChakra() ? '∞  TEST' : `${Math.floor(this.player.chakra)} / ${this.player.maxChakra}`);
+    this.chakraBar.setFillStyle(this.player.isChargingChakra() ? 0xc8fffa : 0x64e6db);
+    this.chakraText.setText(this.player.hasInfiniteChakra() ? '∞  TEST' : this.player.isChargingChakra() ? `CHG ${Math.floor(this.player.chakra)}` : `${Math.floor(this.player.chakra)} / ${this.player.maxChakra}`);
     this.levelText.setText(`LV ${this.player.level}  •  ${this.player.gold} G`);
   }
 

@@ -34,6 +34,12 @@ export class PreloadScene extends Phaser.Scene {
       frameWidth: 256,
       frameHeight: 256,
     });
+    this.load.spritesheet('enemy_scout_sheet', 'assets/sprites/animations/enemies/scout_combat_sheet.png', {
+      frameWidth: 256, frameHeight: 256,
+    });
+    this.load.spritesheet('enemy_brute_sheet', 'assets/sprites/animations/enemies/brute_combat_sheet.png', {
+      frameWidth: 256, frameHeight: 256,
+    });
   }
 
   create(): void {
@@ -44,6 +50,8 @@ export class PreloadScene extends Phaser.Scene {
     this.textures.get('char_kaito_spirit_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.textures.get('char_kaito_kick_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.textures.get('vfx_wind_orb_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.textures.get('enemy_scout_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.textures.get('enemy_brute_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
     AnimationController.registerAllFromData(this);
     if (!this.anims.exists('kaito_attack2')) {
       this.anims.create({
@@ -55,8 +63,8 @@ export class PreloadScene extends Phaser.Scene {
     }
     if (!this.anims.exists('kaito_spirit_run')) {
       const clips = {
-        idle: [19, 19, 1, -1], run: [0, 11, 16, -1], jump: [3, 3, 1, 0],
-        fall: [11, 11, 1, 0], dash: [0, 7, 24, 0], attack1: [12, 19, 24, 0],
+        idle: [19, 19, 1, -1], run: [0, 11, 20, -1], jump: [3, 3, 1, 0],
+        fall: [11, 11, 1, 0], dash: [0, 7, 36, 0], charge: [19, 19, 1, -1], skill: [12, 19, 24, 0], attack1: [12, 19, 24, 0],
         attack2: [12, 19, 27, 0], attack3: [12, 19, 21, 0], hurt: [18, 18, 1, 0], dead: [19, 19, 1, 0],
       } as const;
       Object.entries(clips).forEach(([state, [start, end, frameRate, repeat]]) => {
@@ -68,6 +76,7 @@ export class PreloadScene extends Phaser.Scene {
         });
       });
     }
+    this.createEnemyAnimations();
     if (!this.anims.exists('wind_orb_spin')) {
       this.anims.create({
         key: 'wind_orb_spin',
@@ -83,6 +92,22 @@ export class PreloadScene extends Phaser.Scene {
       });
     }
     this.scene.start('MainMenuScene');
+  }
+
+  private createEnemyAnimations(): void {
+    const clips = [
+      ['scout', 'idle', 0, 0, 1, -1], ['scout', 'run', 0, 3, 14, -1], ['scout', 'attack', 4, 7, 18, 0],
+      ['brute', 'idle', 0, 0, 1, -1], ['brute', 'run', 0, 3, 9, -1], ['brute', 'attack', 4, 7, 12, 0],
+    ] as const;
+    clips.forEach(([kind, state, start, end, frameRate, repeat]) => {
+      const key = `enemy_${kind}_${state}`;
+      if (!this.anims.exists(key)) this.anims.create({
+        key,
+        frames: this.anims.generateFrameNumbers(`enemy_${kind}_sheet`, { start, end }),
+        frameRate,
+        repeat,
+      });
+    });
   }
 
   private createLoadingBar(): void {

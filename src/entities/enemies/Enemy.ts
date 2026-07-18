@@ -16,6 +16,7 @@ interface EnemyStat {
   speed: number;
   reward: number;
   texture: string;
+  animationTexture?: string;
   displayHeight: number;
   bodyWidthRatio: number;
   bodyHeightRatio: number;
@@ -25,11 +26,11 @@ interface EnemyStat {
 
 const ENEMY_STATS: Record<EnemyKind, EnemyStat> = {
   scout: {
-    hp: 55, damage: 8, speed: 142, reward: 35, texture: 'enemy_scout', displayHeight: 168,
+    hp: 55, damage: 8, speed: 142, reward: 35, texture: 'enemy_scout', animationTexture: 'enemy_scout_sheet', displayHeight: 168,
     bodyWidthRatio: 0.17, bodyHeightRatio: 0.62, bodyOffsetX: 0.41, bodyOffsetY: 0.32,
   },
   brute: {
-    hp: 135, damage: 15, speed: 70, reward: 80, texture: 'enemy_brute', displayHeight: 214,
+    hp: 135, damage: 15, speed: 70, reward: 80, texture: 'enemy_brute', animationTexture: 'enemy_brute_sheet', displayHeight: 224,
     bodyWidthRatio: 0.2, bodyHeightRatio: 0.65, bodyOffsetX: 0.4, bodyOffsetY: 0.31,
   },
   boss: {
@@ -58,10 +59,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private dead = false;
   private phase = 1;
   private facing: Direction = 'left';
+  private readonly hasFrameAnimations: boolean;
+  private currentAnimation = '';
 
   constructor(scene: Phaser.Scene, x: number, y: number, kind: EnemyKind, host: EnemyHost) {
     const stat = ENEMY_STATS[kind];
-    super(scene, x, y, stat.texture);
+    super(scene, x, y, stat.animationTexture ?? stat.texture, 0);
     this.kind = kind;
     this.maxHp = stat.hp;
     this.hp = stat.hp;
@@ -69,6 +72,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.damage = stat.damage;
     this.moveSpeed = stat.speed;
     this.host = host;
+    this.hasFrameAnimations = Boolean(stat.animationTexture);
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -89,7 +93,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.healthBarFill = scene.add.rectangle(0, 0, this.barWidth - 2, 5, kind === 'boss' ? 0xd8b4fe : 0x52e0c4)
       .setOrigin(0, 0.5).setDepth(31);
 
-    scene.tweens.add({
+    if (this.hasFrameAnimations) this.playState('idle');
+    else scene.tweens.add({
       targets: this,
       scaleY: this.baseScaleY * 1.012,
       duration: kind === 'boss' ? 1150 : 820,
@@ -107,11 +112,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.attackWindup > 0) {
       this.attackWindup -= delta;
       this.setVelocityX(0);
-      this.angle = Math.sin(this.scene.time.now * 0.045) * 2.5;
-      if (this.attackWindup <= 0 && this.distanceSquaredTo(player) < Math.pow(this.kind === 'boss' ? 175 : 125, 2)) {
+      if (!this.hasFrameAnimations) this.angle = Math.sin(this.scene.time.now * 0.045) * 2.5;
+      const hitRange = this.kind === 'boss' ? 235 : this.kind === 'brute' ? 185 : 145;
+      if (this.attackWindup <= 0 && this.distanceSquaredTo(player) < hitRange * hitRange) {
         this.host.damagePlayer(this.damage * this.phase, this.x, this.kind === 'brute' ? 360 : 250);
         this.host.createHitBurst(player.x, player.y - 55, this.kind === 'boss' ? 0xd8b4fe : 0xff9fba);
         this.angle = 0;
+        this.playState('idle');
       }
       this.updateHealthBar();
       return;
@@ -119,6 +126,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     if (this.hitStun > 0) {
       this.setVelocityX((this.body as Phaser.Physics.Arcade.Body).velocity.x * 0.72);
+      this.playState('idle');
       this.updateHealthBar();
       return;
     }
@@ -128,16 +136,17 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const distanceSquared = dx * dx + dy * dy;
     const direction: 1 | -1 = dx >= 0 ? 1 : -1;
     this.facing = direction > 0 ? 'right' : 'left';
-    this.setFlipX(direction > 0);
+    this.setFlipX(this.hasFrameAnimations ? direction < 0 : direction > 0);
 
-    const attackRange = this.kind === 'boss' ? 138 : 108;
+    const attackRange = this.kind === 'boss' ? 215 : this.kind === 'brute' ? 168 : 132;
     if (distanceSquared > attackRange * attackRange) {
       this.setVelocityX(direction * this.moveSpeed * (this.phase === 2 ? 1.18 : 1));
-      this.angle = Math.sin(this.scene.time.now * 0.013 + this.x * 0.01) * (this.kind === 'brute' ? 0.8 : 1.8);
+      this.playState('run');
+      if (!this.hasFrameAnimations) this.angle = Math.sin(this.scene.time.now * 0.013 + this.x * 0.01) * (this.kind === 'brute' ? 0.8 : 1.8);
     } else {
       this.setVelocityX(0);
       this.angle = 0;
-      if (this.attackCooldown <= 0) this.beginAttack();
+      if (this.attackCooldown <= 0) this.beginAttack(); else this.playState('idle');
     }
 
     if (this.kind === 'boss' && this.phase === 1 && this.hp <= this.maxHp * 0.5) {
@@ -149,7 +158,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.updateHealthBar();
   }
 
-  takeDamage(amount: number, knockback: number, direction: 1 | -1): boolean {
+  takeDamage(amount: number, knockback: number, direction: 1 | -1, critical = false): boolean {
     if (this.dead) return false;
     this.hp = Math.max(0, this.hp - amount);
     this.hitStun = this.kind === 'boss' ? 75 : 145;
@@ -160,7 +169,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       if (!this.dead && this.phase === 1) this.clearTint();
     });
     this.host.createHitBurst(this.x, this.y - this.displayHeight * 0.48, this.kind === 'boss' ? 0xf0abfc : 0xffd166);
-    this.host.createDamageNumber(this.x, this.y - this.displayHeight * 0.72, amount, amount >= 45);
+    this.host.createDamageNumber(this.x, this.y - this.displayHeight * 0.72, amount, critical);
     if (this.hp <= 0) this.defeat();
     return true;
   }
@@ -170,10 +179,36 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private beginAttack(): void {
     this.attackCooldown = this.kind === 'boss' ? 920 : this.kind === 'brute' ? 1080 : 760;
     this.attackWindup = this.kind === 'boss' ? 300 : this.kind === 'brute' ? 245 : 175;
+    this.playState('attack', true);
+    this.createAttackTelegraph();
     this.setTint(this.kind === 'boss' ? 0xd8b4fe : 0xffd8a8);
     this.scene.time.delayedCall(105, () => {
       if (!this.dead && this.phase === 1) this.clearTint();
       else if (!this.dead) this.setTint(0xe9d5ff);
+    });
+  }
+
+  private playState(state: 'idle' | 'run' | 'attack', force = false): void {
+    if (!this.hasFrameAnimations) return;
+    const key = `enemy_${this.kind}_${state}`;
+    if (!this.scene.anims.exists(key) || (!force && this.currentAnimation === key)) return;
+    this.currentAnimation = key;
+    this.play(key, true);
+  }
+
+  private createAttackTelegraph(): void {
+    const color = this.kind === 'boss' ? 0xd8b4fe : this.kind === 'brute' ? 0xff8a66 : 0xffd166;
+    const ring = this.scene.add.graphics().setPosition(this.x, this.y - 6).setDepth(9);
+    ring.lineStyle(this.kind === 'boss' ? 6 : 3, color, 0.8).strokeEllipse(0, 0, this.kind === 'boss' ? 190 : 112, 34);
+    ring.fillStyle(color, 0.08).fillEllipse(0, 0, this.kind === 'boss' ? 180 : 102, 28);
+    ring.setScale(0.35).setAlpha(0.25);
+    this.scene.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0.92,
+      duration: Math.max(120, this.attackWindup),
+      ease: 'Cubic.easeOut',
+      onComplete: () => this.scene.tweens.add({ targets: ring, alpha: 0, duration: 90, onComplete: () => ring.destroy() }),
     });
   }
 
