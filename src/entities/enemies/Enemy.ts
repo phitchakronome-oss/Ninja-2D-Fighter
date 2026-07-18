@@ -27,15 +27,15 @@ interface EnemyStat {
 const ENEMY_STATS: Record<EnemyKind, EnemyStat> = {
   scout: {
     hp: 55, damage: 8, speed: 142, reward: 35, texture: 'enemy_scout', animationTexture: 'enemy_scout_sheet', displayHeight: 168,
-    bodyWidthRatio: 0.17, bodyHeightRatio: 0.62, bodyOffsetX: 0.41, bodyOffsetY: 0.32,
+    bodyWidthRatio: 0.32, bodyHeightRatio: 0.62, bodyOffsetX: 0.34, bodyOffsetY: 0.32,
   },
   brute: {
     hp: 135, damage: 15, speed: 70, reward: 80, texture: 'enemy_brute', animationTexture: 'enemy_brute_sheet', displayHeight: 224,
-    bodyWidthRatio: 0.2, bodyHeightRatio: 0.65, bodyOffsetX: 0.4, bodyOffsetY: 0.31,
+    bodyWidthRatio: 0.34, bodyHeightRatio: 0.65, bodyOffsetX: 0.33, bodyOffsetY: 0.31,
   },
   boss: {
     hp: 820, damage: 22, speed: 94, reward: 500, texture: 'enemy_boss', displayHeight: 306,
-    bodyWidthRatio: 0.25, bodyHeightRatio: 0.7, bodyOffsetX: 0.38, bodyOffsetY: 0.26,
+    bodyWidthRatio: 0.3, bodyHeightRatio: 0.7, bodyOffsetX: 0.35, bodyOffsetY: 0.26,
   },
 };
 
@@ -61,6 +61,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private facing: Direction = 'left';
   private readonly hasFrameAnimations: boolean;
   private currentAnimation = '';
+  private attackTelegraph?: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene, x: number, y: number, kind: EnemyKind, host: EnemyHost) {
     const stat = ENEMY_STATS[kind];
@@ -136,7 +137,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const distanceSquared = dx * dx + dy * dy;
     const direction: 1 | -1 = dx >= 0 ? 1 : -1;
     this.facing = direction > 0 ? 'right' : 'left';
-    this.setFlipX(this.hasFrameAnimations ? direction < 0 : direction > 0);
+    // Enemy animation sheets are authored facing left. Flip only while moving right.
+    this.setFlipX(direction > 0);
 
     const attackRange = this.kind === 'boss' ? 215 : this.kind === 'brute' ? 168 : 132;
     if (distanceSquared > attackRange * attackRange) {
@@ -161,6 +163,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   takeDamage(amount: number, knockback: number, direction: 1 | -1, critical = false): boolean {
     if (this.dead) return false;
     this.hp = Math.max(0, this.hp - amount);
+    if (this.kind !== 'boss' && this.attackWindup > 0) {
+      this.attackWindup = 0;
+      this.clearAttackTelegraph();
+      this.playState('idle', true);
+    }
     this.hitStun = this.kind === 'boss' ? 75 : 145;
     this.setVelocityX(direction * knockback);
     this.setTint(0xffffff);
@@ -197,8 +204,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   private createAttackTelegraph(): void {
+    this.clearAttackTelegraph();
     const color = this.kind === 'boss' ? 0xd8b4fe : this.kind === 'brute' ? 0xff8a66 : 0xffd166;
     const ring = this.scene.add.graphics().setPosition(this.x, this.y - 6).setDepth(9);
+    this.attackTelegraph = ring;
     ring.lineStyle(this.kind === 'boss' ? 6 : 3, color, 0.8).strokeEllipse(0, 0, this.kind === 'boss' ? 190 : 112, 34);
     ring.fillStyle(color, 0.08).fillEllipse(0, 0, this.kind === 'boss' ? 180 : 102, 28);
     ring.setScale(0.35).setAlpha(0.25);
@@ -208,8 +217,23 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       alpha: 0.92,
       duration: Math.max(120, this.attackWindup),
       ease: 'Cubic.easeOut',
-      onComplete: () => this.scene.tweens.add({ targets: ring, alpha: 0, duration: 90, onComplete: () => ring.destroy() }),
+      onComplete: () => this.scene.tweens.add({
+        targets: ring,
+        alpha: 0,
+        duration: 90,
+        onComplete: () => {
+          if (this.attackTelegraph === ring) this.attackTelegraph = undefined;
+          ring.destroy();
+        },
+      }),
     });
+  }
+
+  private clearAttackTelegraph(): void {
+    if (!this.attackTelegraph) return;
+    this.scene.tweens.killTweensOf(this.attackTelegraph);
+    this.attackTelegraph.destroy();
+    this.attackTelegraph = undefined;
   }
 
   private distanceSquaredTo(target: Phaser.GameObjects.Components.Transform): number {
@@ -221,6 +245,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private defeat(): void {
     if (this.dead) return;
     this.dead = true;
+    this.clearAttackTelegraph();
     this.scene.tweens.killTweensOf(this);
     this.setVelocity(0, -240);
     const body = this.body as Phaser.Physics.Arcade.Body;

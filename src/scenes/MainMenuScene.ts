@@ -7,6 +7,7 @@ export class MainMenuScene extends Phaser.Scene {
   private settings: GameSettings = { ...DEFAULT_GAME_SETTINGS };
   private modeText!: Phaser.GameObjects.Text;
   private modeButton!: Phaser.GameObjects.Rectangle;
+  private starting = false;
   private toggleViews = new Map<CheatKey, { box: Phaser.GameObjects.Rectangle; mark: Phaser.GameObjects.Text }>();
 
   constructor() {
@@ -14,6 +15,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.starting = false;
     this.add.image(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 'stage_moon_valley')
       .setDisplaySize(SCREEN.WIDTH, SCREEN.HEIGHT);
     this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, SCREEN.WIDTH, SCREEN.HEIGHT, 0x020711, 0.58);
@@ -57,6 +59,10 @@ export class MainMenuScene extends Phaser.Scene {
     start.on('pointerout', () => start.setFillStyle(0x22b8aa));
     start.on('pointerdown', () => this.startGame());
     this.input.keyboard?.on('keydown-ENTER', () => this.startGame());
+    this.add.text(SCREEN.WIDTH / 2, 646, 'A/D เดิน  •  W กระโดด  •  J โจมตี  •  C ชาร์จจักระ  •  U/I/O/K สกิล  •  L ร่าง 2', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#9eb6d7',
+      backgroundColor: '#04101dcc', padding: { left: 12, right: 12, top: 7, bottom: 7 },
+    }).setOrigin(0.5);
     void panel;
     void startText;
     this.refresh();
@@ -101,6 +107,8 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private startGame(): void {
+    if (this.starting) return;
+    this.starting = true;
     this.registry.set('selectedCharacterId', 'kaito');
     this.registry.set('gameSettings', { ...this.settings });
     this.scene.start('StageScene');

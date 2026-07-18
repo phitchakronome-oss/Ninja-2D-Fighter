@@ -118,23 +118,17 @@ export class UIScene extends Phaser.Scene {
   private createPauseOverlay(): void {
     const veil = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, SCREEN.WIDTH, SCREEN.HEIGHT, 0x02050d, 0.72)
       .setInteractive();
-    const panel = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 470, 220, 0x0b1730, 0.98)
+    const panel = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 470, 280, 0x0b1730, 0.98)
       .setStrokeStyle(3, 0x64e6db, 0.9);
-    const title = this.add.text(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 - 48, 'หยุดชั่วคราว', {
+    const title = this.add.text(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 - 78, 'หยุดชั่วคราว', {
       fontFamily: 'Arial Black, sans-serif', fontSize: '34px', color: '#eaf8ff',
     }).setOrigin(0.5);
-    const hint = this.add.text(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 + 8, 'กด P / ESC หรือปุ่มด้านล่างเพื่อกลับเข้าสนามรบ', {
+    const hint = this.add.text(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 - 25, 'กด P / ESC หรือเลือกคำสั่งด้านล่าง', {
       fontFamily: 'monospace', fontSize: '14px', color: '#9fb8dc',
     }).setOrigin(0.5);
-    const resume = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 + 64, 190, 44, 0x183b50, 1)
-      .setStrokeStyle(2, 0x64e6db).setInteractive({ useHandCursor: true });
-    const resumeText = this.add.text(resume.x, resume.y, '▶ เล่นต่อ', {
-      fontFamily: 'Arial Black, sans-serif', fontSize: '17px', color: '#ffffff',
-    }).setOrigin(0.5);
-    resume.on('pointerover', () => resume.setFillStyle(0x245a6f));
-    resume.on('pointerout', () => resume.setFillStyle(0x183b50));
-    resume.on('pointerdown', () => this.stage.togglePause());
-    this.pauseOverlay = this.add.container(0, 0, [veil, panel, title, hint, resume, resumeText]).setDepth(100).setVisible(false);
+    const [resume, resumeText] = this.createUiButton(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 + 35, 210, '▶ เล่นต่อ', 0x183b50, () => this.stage.togglePause());
+    const [menu, menuText] = this.createUiButton(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2 + 92, 210, 'กลับหน้าแรก', 0x18233a, () => this.stage.returnToMenu());
+    this.pauseOverlay = this.add.container(0, 0, [veil, panel, title, hint, resume, resumeText, menu, menuText]).setDepth(100).setVisible(false);
   }
 
   private createBar(x: number, y: number, width: number, height: number, color: number, assign: (bar: Phaser.GameObjects.Rectangle) => void): void {
@@ -163,11 +157,25 @@ export class UIScene extends Phaser.Scene {
   }
 
   private showEndPanel(victory: boolean): void {
-    const veil = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, SCREEN.WIDTH, SCREEN.HEIGHT, 0x02050d, 0.78);
-    const panel = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 500, 270, 0x0b1730, 0.98).setStrokeStyle(3, victory ? 0xffd166 : 0xff6688);
-    const title = this.add.text(SCREEN.WIDTH / 2, 275, victory ? 'MISSION COMPLETE' : 'MISSION FAILED', { fontFamily: 'Arial Black, sans-serif', fontSize: '34px', color: victory ? '#ffd166' : '#ff8fab' }).setOrigin(0.5);
-    const body = this.add.text(SCREEN.WIDTH / 2, 335, victory ? `สนามรบถูกชำระแล้ว\nเลเวล ${this.player.level}  •  ${this.player.kills} KILLS  •  ${this.player.gold} G` : 'เงามืดกลืนกินสนามรบ\nกด R เพื่อเริ่มการต่อสู้อีกครั้ง', { fontFamily: 'monospace', fontSize: '16px', color: '#d8e7ff', align: 'center', lineSpacing: 10 }).setOrigin(0.5);
-    const hint = this.add.text(SCREEN.WIDTH / 2, 435, victory ? 'กด R เพื่อเล่นซ้ำและทำลายสถิติ' : 'R  RESTART', { fontFamily: 'monospace', fontSize: '13px', color: '#93a4c4' }).setOrigin(0.5);
-    this.endPanel = this.add.container(0, 0, [veil, panel, title, body, hint]).setDepth(50);
+    const veil = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, SCREEN.WIDTH, SCREEN.HEIGHT, 0x02050d, 0.8).setInteractive();
+    const panel = this.add.rectangle(SCREEN.WIDTH / 2, SCREEN.HEIGHT / 2, 560, 320, 0x0b1730, 0.98).setStrokeStyle(3, victory ? 0xffd166 : 0xff6688);
+    const title = this.add.text(SCREEN.WIDTH / 2, 265, victory ? 'MISSION COMPLETE' : 'MISSION FAILED', { fontFamily: 'Arial Black, sans-serif', fontSize: '34px', color: victory ? '#ffd166' : '#ff8fab' }).setOrigin(0.5);
+    const body = this.add.text(SCREEN.WIDTH / 2, 330, victory ? `สนามรบถูกชำระแล้ว\nเลเวล ${this.player.level}  •  ${this.player.kills} KILLS  •  ${this.player.gold} G` : `เงามืดกลืนกินสนามรบ\nกำจัดศัตรูได้ ${this.player.kills} ตัว  •  ${this.player.gold} G`, { fontFamily: 'monospace', fontSize: '16px', color: '#d8e7ff', align: 'center', lineSpacing: 10 }).setOrigin(0.5);
+    const [restart, restartText] = this.createUiButton(SCREEN.WIDTH / 2 - 120, 430, 210, 'R  เล่นอีกครั้ง', victory ? 0x55451e : 0x4b2030, () => this.stage.restartBattle());
+    const [menu, menuText] = this.createUiButton(SCREEN.WIDTH / 2 + 120, 430, 210, 'M  หน้าแรก', 0x18233a, () => this.stage.returnToMenu());
+    this.endPanel = this.add.container(0, 0, [veil, panel, title, body, restart, restartText, menu, menuText]).setDepth(120);
+  }
+
+  private createUiButton(x: number, y: number, width: number, label: string, color: number, onClick: () => void): [Phaser.GameObjects.Rectangle, Phaser.GameObjects.Text] {
+    const button = this.add.rectangle(x, y, width, 44, color, 1)
+      .setStrokeStyle(2, 0x64e6db, 0.85)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add.text(x, y, label, {
+      fontFamily: 'Arial Black, sans-serif', fontSize: '15px', color: '#ffffff',
+    }).setOrigin(0.5);
+    button.on('pointerover', () => button.setAlpha(0.78));
+    button.on('pointerout', () => button.setAlpha(1));
+    button.on('pointerdown', onClick);
+    return [button, text];
   }
 }

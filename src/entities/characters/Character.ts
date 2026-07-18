@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COMBAT, PHYSICS, DASH_DOUBLE_TAP_WINDOW_MS, COOLDOWN_MS, CHAKRA, DEFAULT_GAME_SETTINGS, type GameSettings } from '../../config/GameConfig';
+import { COMBAT, PHYSICS, DASH_DOUBLE_TAP_WINDOW_MS, COOLDOWN_MS, CHAKRA, EXP, DEFAULT_GAME_SETTINGS, type GameSettings } from '../../config/GameConfig';
 import type { CharacterDefinition, Direction, SkillSlot } from '../../core/types';
 import { StateMachine } from '../../core/StateMachine';
 import { InputManager } from '../../systems/InputManager';
@@ -17,8 +17,8 @@ export interface PlayerHost {
 
 export class Character extends Phaser.Physics.Arcade.Sprite {
   readonly definition: CharacterDefinition;
-  readonly maxHp: number;
-  readonly maxChakra: number;
+  maxHp: number;
+  maxChakra: number;
   hp: number;
   chakra: number;
   level = 1;
@@ -86,7 +86,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     if (this.hp <= 0) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
     let onGround = body.blocked.down || body.touching.down || (this.y >= this.groundY - 1.5 && body.velocity.y >= 0);
-    if (this.y > this.groundY || (onGround && this.y > this.groundY - 1)) {
+    if (this.y > this.groundY + 0.25) {
       this.setY(this.groundY);
       if (body.velocity.y > 0) this.setVelocityY(0);
       body.updateFromGameObject();
@@ -157,7 +157,11 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   isInvincible(): boolean { return this.gameSettings.invincible; }
   hasZeroCooldown(): boolean { return this.gameSettings.zeroCooldown; }
   isChargingChakra(): boolean { return this.charging; }
-  getExpToNextLevel(): number { return Math.floor(100 * Math.pow(1.18, this.level - 1)); }
+  getExpToNextLevel(): number { return Math.floor(EXP.BASE_TO_LEVEL_UP * Math.pow(EXP.GROWTH_RATE, this.level - 1)); }
+
+  gainChakra(amount: number): void {
+    this.chakra = this.gameSettings.infiniteChakra ? this.maxChakra : Math.min(this.maxChakra, this.chakra + amount);
+  }
 
   takeDamage(rawAmount: number, sourceX: number, knockback: number): void {
     if (this.hp <= 0 || this.invulnerableMs > 0 || this.isDashing) return;
@@ -166,7 +170,9 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       return;
     }
     this.stopCharging();
-    const defense = this.definition.baseStats.defense + (this.isTransformed ? 7 : 0);
+    const defense = this.definition.baseStats.defense
+      + (this.level - 1) * EXP.STAT_GAIN_PER_LEVEL.defense
+      + (this.isTransformed ? 7 : 0);
     const amount = Math.max(1, Math.round(rawAmount - defense * 0.55));
     this.hp = Math.max(0, this.hp - amount);
     this.invulnerableMs = COMBAT.INVINCIBLE_AFTER_HIT_MS;
@@ -185,7 +191,9 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     while (this.exp >= this.getExpToNextLevel()) {
       this.exp -= this.getExpToNextLevel();
       this.level += 1;
-      this.hp = Math.min(this.maxHp, this.hp + 20);
+      this.maxHp += EXP.STAT_GAIN_PER_LEVEL.hp;
+      this.maxChakra += EXP.STAT_GAIN_PER_LEVEL.chakra;
+      this.hp = Math.min(this.maxHp, this.hp + Math.round(this.maxHp * 0.3));
       this.chakra = this.maxChakra;
       this.host.createHitBurst(this.x, this.y - 60, 0xffd166, true);
       this.host.notifyPlayer(`LEVEL UP!  เลเวล ${this.level}`, '#ffd166');
@@ -209,15 +217,13 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       .addState('dead', { onEnter: () => { this.actionLockMs = 99999; play('dead'); } });
   }
 
-  private handleHorizontalMovement(delta: number): void {
+  private handleHorizontalMovement(_delta: number): void {
     const left = this.inputManager.isDown('LEFT');
     const right = this.inputManager.isDown('RIGHT');
     const speed = (this.isTransformed ? 1.16 : 1) * PHYSICS.WALK_SPEED * this.definition.baseStats.speedMultiplier;
-    const current = (this.body as Phaser.Physics.Arcade.Body).velocity.x;
-    const blend = Math.min(1, delta * 0.025);
-    if (left && !right) { this.setVelocityX(Phaser.Math.Linear(current, -speed, blend)); this.facing = 'left'; this.setFlipX(true); }
-    else if (right && !left) { this.setVelocityX(Phaser.Math.Linear(current, speed, blend)); this.facing = 'right'; this.setFlipX(false); }
-    else this.setVelocityX(Phaser.Math.Linear(current, 0, Math.min(1, delta * 0.04)));
+    if (left && !right) { this.setVelocityX(-speed); this.facing = 'left'; this.setFlipX(true); }
+    else if (right && !left) { this.setVelocityX(speed); this.facing = 'right'; this.setFlipX(false); }
+    else this.setVelocityX((this.body as Phaser.Physics.Arcade.Body).velocity.x * 0.72);
   }
 
   private handleJumpInput(onGround: boolean): void {
@@ -265,9 +271,9 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     const hitAt = this.combo === 3 ? 220 : this.combo === 2 ? 170 : 165;
     if (this.actionLockMs <= startLock - hitAt) {
       this.attackHitDone = true;
-      const damage = (this.definition.baseStats.damage + this.combo * 6) * (this.isTransformed ? 1.35 : 1);
+      const levelDamage = (this.level - 1) * EXP.STAT_GAIN_PER_LEVEL.damage;
+      const damage = (this.definition.baseStats.damage + levelDamage + this.combo * 6) * (this.isTransformed ? 1.35 : 1);
       this.host.checkPlayerAttack(this.x, this.facing, damage, this.combo === 3 ? 420 : 240, this.combo === 3 ? 180 : 135, this.combo);
-      this.chakra = Math.min(this.maxChakra, this.chakra + CHAKRA.GAIN_PER_HIT);
     }
   }
 

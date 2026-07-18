@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COMBAT, SCREEN } from '../config/GameConfig';
+import { CHAKRA, COMBAT, EXP, SCREEN } from '../config/GameConfig';
 import { getCharacterDefinition } from '../data/characters';
 import type { Direction, SkillSlot } from '../core/types';
 import { Character, type PlayerHost } from '../entities/characters/Character';
@@ -33,6 +33,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   private boss?: Enemy;
   private state: StageState = 'playing';
   private restartKey!: Phaser.Input.Keyboard.Key;
+  private menuKey!: Phaser.Input.Keyboard.Key;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
   private paused = false;
   private playerAura?: Phaser.GameObjects.Graphics;
@@ -67,6 +68,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
 
     this.inputManager = new InputManager(this);
     this.restartKey = this.input.keyboard!.addKey('R');
+    this.menuKey = this.input.keyboard!.addKey('M');
     this.pauseKeys = [this.input.keyboard!.addKey('P'), this.input.keyboard!.addKey('ESC')];
     this.player = new Character(this, 240, SCREEN.HEIGHT - GROUND_HEIGHT, definition, this.inputManager, this);
     this.physics.add.collider(this.player, this.groundGroup);
@@ -74,6 +76,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.spawnWave(1);
     this.scene.launch('UIScene');
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.resumeSystemsIfPaused());
   }
 
   update(_time: number, delta: number): void {
@@ -83,8 +86,11 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     }
     if (this.paused) return;
     if (Phaser.Input.Keyboard.JustDown(this.restartKey) && this.state !== 'playing') {
-      this.scene.stop('UIScene');
-      this.scene.restart();
+      this.restartBattle();
+      return;
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.menuKey) && this.state !== 'playing') {
+      this.returnToMenu();
       return;
     }
     if (this.state !== 'playing') return;
@@ -140,6 +146,18 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
 
   isPaused(): boolean { return this.paused; }
 
+  restartBattle(): void {
+    this.resumeSystemsIfPaused();
+    this.scene.stop('UIScene');
+    this.scene.restart();
+  }
+
+  returnToMenu(): void {
+    this.resumeSystemsIfPaused();
+    this.scene.stop('UIScene');
+    this.scene.start('MainMenuScene');
+  }
+
   togglePause(): void {
     if (this.state !== 'playing') return;
     this.paused = !this.paused;
@@ -166,7 +184,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       && Math.abs(enemy.x - x) <= range);
     targets.forEach((enemy) => {
       if (enemy.takeDamage(finalDamage, knockback, direction, critical)) {
-        this.player.chakra = Math.min(this.player.maxChakra, this.player.chakra + 4);
+        this.player.gainChakra(CHAKRA.GAIN_PER_HIT);
         this.cameras.main.shake(critical ? 115 : 70, critical ? 0.005 : 0.0025);
         if (critical) this.notifyPlayer('CRITICAL HIT!', '#fff1a8');
       }
@@ -176,7 +194,8 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
   handlePlayerSkill(slot: SkillSlot, x: number, y: number, facing: Direction): void {
     if (this.state !== 'playing') return;
     const direction = facing === 'right' ? 1 : -1;
-    const power = this.player.definition.baseStats.damage * (this.player.isTransformed ? 1.35 : 1);
+    const levelDamage = (this.player.level - 1) * EXP.STAT_GAIN_PER_LEVEL.damage;
+    const power = (this.player.definition.baseStats.damage + levelDamage) * (this.player.isTransformed ? 1.35 : 1);
     if (slot === 'skill1') {
       this.createWindOrbVfx(x, y, direction);
       this.damageEnemiesInArea(x + direction * 175, y, 210, power * 2.2, direction, 260);
@@ -206,6 +225,7 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     this.player.kills += 1;
     this.player.gold += enemy.reward;
     this.player.addExp(enemy.reward);
+    this.player.gainChakra(CHAKRA.GAIN_PER_KILL);
     this.notifyPlayer(`+${enemy.reward} EXP   +${enemy.reward} เหรียญ`, '#8ef0c2');
     if (enemy === this.boss) {
       this.state = 'victory';
@@ -491,5 +511,13 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
       ease: 'Cubic.easeOut',
       onComplete: () => arc.destroy(),
     });
+  }
+
+  private resumeSystemsIfPaused(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.physics.world.resume();
+    this.tweens.resumeAll();
+    this.anims.resumeAll();
   }
 }
