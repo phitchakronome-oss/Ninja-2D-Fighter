@@ -1,7 +1,19 @@
 # Shadow Chronicles — 2D Action RPG
 
 เกม Action RPG 2D แนว Side-scrolling Beat'em up / Boss Rush
-สร้างด้วย **Phaser 3 + TypeScript + Vite**
+สร้างด้วย **Phaser 4 + TypeScript + Vite**
+
+## ปุ่มควบคุม
+
+| ปุ่ม | การกระทำ |
+|---|---|
+| `A / D` หรือ `← / →` | เดิน (แตะทิศทางซ้ำเพื่อ Dash) |
+| `W` หรือ `↑` | กระโดด / Double Jump |
+| `J` | คอมโบโจมตี 3 จังหวะ |
+| `U / I / O` | สกิล 1–3 |
+| `K` | Ultimate |
+| `L` | โหมดจักระ |
+| `R` | เริ่มด่านใหม่ |
 
 ## เริ่มต้นใช้งาน (VS Code)
 
@@ -45,6 +57,8 @@ public/assets/
 ├── audio/          เพลง/เสียงประกอบ
 └── effects/        Particle texture
 ```
+
+ภาพตัวละครและศัตรูเวอร์ชันเต็มถูกเก็บใน `art_sources/generated/` ส่วนไฟล์ที่ปรับขนาดและลดน้ำหนักสำหรับเกมอยู่ใน `public/assets/sprites/` ดู prompt ที่ใช้และ prompt สำหรับสร้าง sprite sheet ต่อได้ใน `docs/ASSET_GENERATION_PROMPTS.md`.
 
 ## ระบบ Animation
 
