@@ -72,8 +72,21 @@ export const DASH_DOUBLE_TAP_WINDOW_MS = 260;
 export const DEBUG = {
   SHOW_HITBOXES: false, // ⚡ แก้ไขจุดนี้: เปลี่ยนจาก true เป็น false เพื่อนำเส้นกรอบรอบตัวนินจาออก!
   SHOW_FPS: true,
-  INFINITE_CHAKRA: true, // โหมดทดสอบ: ใช้สกิลได้ต่อเนื่องโดยจักระไม่ลด
 } as const;
+
+export interface GameSettings {
+  cheatMode: boolean;
+  infiniteChakra: boolean;
+  invincible: boolean;
+  zeroCooldown: boolean;
+}
+
+export const DEFAULT_GAME_SETTINGS: GameSettings = {
+  cheatMode: false,
+  infiniteChakra: false,
+  invincible: false,
+  zeroCooldown: false,
+};
 
 /**
  * ANIMATION

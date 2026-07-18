@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COMBAT, PHYSICS, DASH_DOUBLE_TAP_WINDOW_MS, COOLDOWN_MS, CHAKRA, DEBUG } from '../../config/GameConfig';
+import { COMBAT, PHYSICS, DASH_DOUBLE_TAP_WINDOW_MS, COOLDOWN_MS, CHAKRA, DEFAULT_GAME_SETTINGS, type GameSettings } from '../../config/GameConfig';
 import type { CharacterDefinition, Direction, SkillSlot } from '../../core/types';
 import { StateMachine } from '../../core/StateMachine';
 import { InputManager } from '../../systems/InputManager';
@@ -33,6 +33,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   protected facing: Direction = 'right';
 
   private readonly host: PlayerHost;
+  private readonly gameSettings: GameSettings;
   private jumpsUsed = 0;
   private readonly maxJumps = 2;
   private isDashing = false;
@@ -60,8 +61,9 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     this.inputManager = inputManager;
     this.maxHp = definition.baseStats.maxHp;
     this.maxChakra = definition.baseStats.maxChakra;
+    this.gameSettings = { ...DEFAULT_GAME_SETTINGS, ...(scene.registry.get('gameSettings') as Partial<GameSettings> | undefined) };
     this.hp = this.maxHp;
-    this.chakra = DEBUG.INFINITE_CHAKRA ? this.maxChakra : 35;
+    this.chakra = this.gameSettings.infiniteChakra ? this.maxChakra : 35;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDisplaySize(230, 154).setOrigin(0.5, 1).setDepth(15);
@@ -87,7 +89,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     this.invulnerableMs = Math.max(0, this.invulnerableMs - delta);
     this.actionLockMs = Math.max(0, this.actionLockMs - delta);
     this.transformMs = Math.max(0, this.transformMs - delta);
-    this.chakra = DEBUG.INFINITE_CHAKRA
+    this.chakra = this.gameSettings.infiniteChakra
       ? this.maxChakra
       : Math.min(this.maxChakra, this.chakra + CHAKRA.REGEN_PER_SEC * delta / 1000);
     (Object.keys(this.cooldowns) as SkillSlot[]).forEach((slot) => {
@@ -113,6 +115,10 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.setVelocityX((this.body as Phaser.Physics.Arcade.Body).velocity.x * 0.78);
       this.resolveAttackHit();
+      if (this.attackBuffered && this.actionLockMs <= 85 && this.stateMachine.state?.startsWith('attack')) {
+        this.actionLockMs = 0;
+        this.handleAttackInput();
+      }
     }
 
     this.updateMotionState(onGround);
@@ -123,10 +129,17 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   getCurrentState(): string { return this.stateMachine.state ?? 'idle'; }
   getFacing(): Direction { return this.facing; }
   getCooldown(slot: SkillSlot): number { return this.cooldowns[slot]; }
+  hasInfiniteChakra(): boolean { return this.gameSettings.infiniteChakra; }
+  isInvincible(): boolean { return this.gameSettings.invincible; }
+  hasZeroCooldown(): boolean { return this.gameSettings.zeroCooldown; }
   getExpToNextLevel(): number { return Math.floor(100 * Math.pow(1.18, this.level - 1)); }
 
   takeDamage(rawAmount: number, sourceX: number, knockback: number): void {
     if (this.hp <= 0 || this.invulnerableMs > 0 || this.isDashing) return;
+    if (this.gameSettings.invincible) {
+      this.hp = this.maxHp;
+      return;
+    }
     const defense = this.definition.baseStats.defense + (this.isTransformed ? 7 : 0);
     const amount = Math.max(1, Math.round(rawAmount - defense * 0.55));
     this.hp = Math.max(0, this.hp - amount);
@@ -207,7 +220,7 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
       this.combo = this.combo >= 3 ? 1 : this.combo + 1;
       this.comboExpireAt = now + COMBAT.COMBO_RESET_TIME_MS;
       const state = `attack${this.combo}` as 'attack1' | 'attack2' | 'attack3';
-      this.actionLockMs = this.combo === 3 ? 410 : this.combo === 1 ? 335 : 300;
+      this.actionLockMs = this.combo === 3 ? 410 : 335;
       const lunge = this.combo === 3 ? 185 : this.combo === 2 ? 135 : 95;
       this.setVelocityX((this.facing === 'right' ? 1 : -1) * lunge);
       this.stateMachine.transition(state);
@@ -218,8 +231,8 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
 
   private resolveAttackHit(): void {
     if (this.attackHitDone || !this.stateMachine.state?.startsWith('attack')) return;
-    const startLock = this.combo === 3 ? 410 : this.combo === 1 ? 335 : 300;
-    const hitAt = this.combo === 3 ? 220 : this.combo === 1 ? 165 : 125;
+    const startLock = this.combo === 3 ? 410 : 335;
+    const hitAt = this.combo === 3 ? 220 : this.combo === 2 ? 170 : 165;
     if (this.actionLockMs <= startLock - hitAt) {
       this.attackHitDone = true;
       const damage = (this.definition.baseStats.damage + this.combo * 6) * (this.isTransformed ? 1.35 : 1);
@@ -237,12 +250,12 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
   }
 
   private castSkill(slot: SkillSlot): void {
-    if (this.cooldowns[slot] > 0) return;
+    if (!this.gameSettings.zeroCooldown && this.cooldowns[slot] > 0) return;
     if (slot === 'transform') {
       this.isTransformed = !this.isTransformed;
       this.animController.setVariant(this.isTransformed ? 'spirit' : 'base');
       this.transformMs = this.isTransformed ? 12000 : 0;
-      this.cooldowns[slot] = COOLDOWN_MS.TRANSFORM;
+      this.cooldowns[slot] = this.gameSettings.zeroCooldown ? 0 : COOLDOWN_MS.TRANSFORM;
       if (this.isTransformed) {
         this.host.setPlayerAura(true, this.definition.auraColorHex);
         this.host.notifyPlayer('SPIRIT MODE — พลังเพิ่มขึ้น!', '#ffd166');
@@ -255,9 +268,9 @@ export class Character extends Phaser.Physics.Arcade.Sprite {
     const costs: Record<Exclude<SkillSlot, 'transform'>, number> = { skill1: 18, skill2: 28, skill3: 40, ultimate: 65 };
     const cost = costs[slot];
     if (this.chakra < cost) { this.host.notifyPlayer('จักระไม่พอ', '#ff8fab'); return; }
-    if (!DEBUG.INFINITE_CHAKRA) this.chakra -= cost;
+    if (!this.gameSettings.infiniteChakra) this.chakra -= cost;
     const cooldowns: Record<Exclude<SkillSlot, 'transform'>, number> = { skill1: COOLDOWN_MS.SKILL_1, skill2: COOLDOWN_MS.SKILL_2, skill3: COOLDOWN_MS.SKILL_3, ultimate: COOLDOWN_MS.ULTIMATE };
-    this.cooldowns[slot] = cooldowns[slot];
+    this.cooldowns[slot] = this.gameSettings.zeroCooldown ? 0 : cooldowns[slot];
     this.actionLockMs = slot === 'ultimate' ? 640 : 360;
     this.setVelocityX(0);
     this.host.handlePlayerSkill(slot, this.x, this.y - 55, this.facing);

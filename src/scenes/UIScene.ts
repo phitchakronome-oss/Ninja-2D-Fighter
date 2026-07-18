@@ -70,6 +70,18 @@ export class UIScene extends Phaser.Scene {
     }
     this.messageText = this.add.text(SCREEN.WIDTH / 2, 138, '', { fontFamily: 'Arial Black, sans-serif', fontSize: '24px', stroke: '#07101f', strokeThickness: 6 }).setOrigin(0.5).setDepth(20);
 
+    const activeCheats = [
+      this.player.isInvincible() ? 'HP∞' : '',
+      this.player.hasInfiniteChakra() ? 'CHAKRA∞' : '',
+      this.player.hasZeroCooldown() ? 'CD0' : '',
+    ].filter(Boolean);
+    if (activeCheats.length > 0) {
+      this.add.text(438, 106, `CHEAT  ${activeCheats.join('  ')}`, {
+        fontFamily: 'monospace', fontSize: '11px', color: '#ffd166',
+        backgroundColor: '#07101fdd', padding: { left: 7, right: 7, top: 4, bottom: 4 },
+      }).setOrigin(0, 1);
+    }
+
     const hint = this.add.text(18, SCREEN.HEIGHT - 31, 'A/D เดิน • W กระโดด • J โจมตี • U/I/O สกิล • K อัลติ • L โหมดจักระ • R เริ่มใหม่', { fontFamily: 'monospace', fontSize: '12px', color: '#93a4c4', backgroundColor: '#07101fcc', padding: { left: 8, right: 8, top: 6, bottom: 6 } });
     hint.setScrollFactor(0);
 
@@ -99,8 +111,8 @@ export class UIScene extends Phaser.Scene {
     this.hpBar.width = 266 * Math.max(0, this.player.hp / this.player.maxHp);
     this.chakraBar.width = 266 * Math.max(0, this.player.chakra / this.player.maxChakra);
     this.expBar.width = 266 * Math.max(0, this.player.exp / this.player.getExpToNextLevel());
-    this.hpText.setText(`${Math.ceil(this.player.hp)} / ${this.player.maxHp}`);
-    this.chakraText.setText(DEBUG.INFINITE_CHAKRA ? '∞  TEST' : `${Math.floor(this.player.chakra)} / ${this.player.maxChakra}`);
+    this.hpText.setText(this.player.isInvincible() ? '∞  TEST' : `${Math.ceil(this.player.hp)} / ${this.player.maxHp}`);
+    this.chakraText.setText(this.player.hasInfiniteChakra() ? '∞  TEST' : `${Math.floor(this.player.chakra)} / ${this.player.maxChakra}`);
     this.levelText.setText(`LV ${this.player.level}  •  ${this.player.gold} G`);
   }
 

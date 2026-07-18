@@ -103,6 +103,15 @@ export class AnimationController {
       this.sprite.setOrigin(0.5, 250 / 256);
       this.sprite.play(realKey, true);
       this.fitCurrentFrameToBaseHeight();
+      if (state === 'dead') {
+        this.scene.tweens.add({
+          targets: this.sprite,
+          alpha: 0,
+          angle: this.sprite.flipX ? -ANIMATION.DEATH_ROTATE_DEG : ANIMATION.DEATH_ROTATE_DEG,
+          duration: ANIMATION.DEATH_FADE_MS,
+          ease: 'Quad.easeIn',
+        });
+      }
       return;
     }
 
@@ -304,6 +313,7 @@ export class AnimationController {
         frameWidth * 0.5 - bodyWidth * 0.5,
         frameHeight * this.sprite.originY - bodyHeight,
       );
+      body.updateFromGameObject();
     }
   }
 

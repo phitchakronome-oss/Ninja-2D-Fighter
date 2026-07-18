@@ -75,6 +75,14 @@ export class StageScene extends Phaser.Scene implements PlayerHost, EnemyHost {
     if (this.state !== 'playing') return;
     const frameDelta = Math.min(delta, 34);
     this.player.update(_time, frameDelta);
+    // Safety floor: texture / origin changes must never allow the dynamic body
+    // to tunnel below the single arena platform between physics steps.
+    const arenaFloorY = SCREEN.HEIGHT - GROUND_HEIGHT;
+    if (this.player.y > arenaFloorY + 2) {
+      this.player.setY(arenaFloorY);
+      this.player.setVelocityY(0);
+      (this.player.body as Phaser.Physics.Arcade.Body).updateFromGameObject();
+    }
     this.playerAura?.setPosition(this.player.x, this.player.y - this.player.displayHeight * 0.48);
     if (this.player.getCurrentState() === 'run' && this.time.now >= this.nextRunDustAt) {
       this.createMovementDust(this.player.x, this.player.y - 2, this.player.getFacing());

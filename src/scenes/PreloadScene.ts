@@ -4,7 +4,6 @@ import { AnimationController } from '../systems/AnimationController';
 
 const GAME_ASSETS = {
   hero_kaito: 'assets/sprites/heroes/kaito.png',
-  hero_ren: 'assets/sprites/heroes/ren.png',
   enemy_scout: 'assets/sprites/enemies/shadow_scout.png',
   enemy_brute: 'assets/sprites/enemies/shadow_brute.png',
   enemy_boss: 'assets/sprites/enemies/kage_lord.png',
@@ -27,6 +26,10 @@ export class PreloadScene extends Phaser.Scene {
       frameWidth: 256,
       frameHeight: 256,
     });
+    this.load.spritesheet('char_kaito_kick_sheet', 'assets/sprites/animations/naruto/base/kaito_kick_sheet.png', {
+      frameWidth: 256,
+      frameHeight: 256,
+    });
     this.load.spritesheet('vfx_wind_orb_sheet', 'assets/effects/naruto/wind_orb_sheet.png', {
       frameWidth: 256,
       frameHeight: 256,
@@ -39,20 +42,30 @@ export class PreloadScene extends Phaser.Scene {
     });
     this.textures.get('char_kaito_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.textures.get('char_kaito_spirit_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.textures.get('char_kaito_kick_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.textures.get('vfx_wind_orb_sheet').setFilter(Phaser.Textures.FilterMode.LINEAR);
     AnimationController.registerAllFromData(this);
-    if (!this.anims.exists('kaito_spirit_run')) {
+    if (!this.anims.exists('kaito_attack2')) {
       this.anims.create({
-        key: 'kaito_spirit_run',
-        frames: this.anims.generateFrameNumbers('char_kaito_spirit_sheet', { start: 0, end: 11 }),
-        frameRate: 16,
-        repeat: -1,
-      });
-      this.anims.create({
-        key: 'kaito_spirit_attack1',
-        frames: this.anims.generateFrameNumbers('char_kaito_spirit_sheet', { start: 12, end: 19 }),
+        key: 'kaito_attack2',
+        frames: this.anims.generateFrameNumbers('char_kaito_kick_sheet', { start: 0, end: 7 }),
         frameRate: 24,
         repeat: 0,
+      });
+    }
+    if (!this.anims.exists('kaito_spirit_run')) {
+      const clips = {
+        idle: [19, 19, 1, -1], run: [0, 11, 16, -1], jump: [3, 3, 1, 0],
+        fall: [11, 11, 1, 0], dash: [0, 7, 24, 0], attack1: [12, 19, 24, 0],
+        attack2: [12, 19, 27, 0], attack3: [12, 19, 21, 0], hurt: [18, 18, 1, 0], dead: [19, 19, 1, 0],
+      } as const;
+      Object.entries(clips).forEach(([state, [start, end, frameRate, repeat]]) => {
+        this.anims.create({
+          key: `kaito_spirit_${state}`,
+          frames: this.anims.generateFrameNumbers('char_kaito_spirit_sheet', { start, end }),
+          frameRate,
+          repeat,
+        });
       });
     }
     if (!this.anims.exists('wind_orb_spin')) {
@@ -69,7 +82,7 @@ export class PreloadScene extends Phaser.Scene {
         repeat: 0,
       });
     }
-    this.scene.start('CharacterSelectScene');
+    this.scene.start('MainMenuScene');
   }
 
   private createLoadingBar(): void {
